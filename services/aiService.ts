@@ -1,7 +1,9 @@
 import { GoogleGenAI, Chat, Type } from "@google/genai";
 
-// Initialize the client with the environment API key
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Initialize the client with the environment API key (Vite)
+const ai = new GoogleGenAI({
+  apiKey: import.meta.env.VITE_API_KEY,
+});
 
 const SYSTEM_INSTRUCTION = `Du er Replypilot, en AI-receptionist for Tømrer Hansen.
 Din opgave er at håndtere indgående henvendelser via SMS fra kunder, der lige har ringet forgæves.
