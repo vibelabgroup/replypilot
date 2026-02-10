@@ -3,7 +3,7 @@ import { GoogleGenAI, Chat, Type } from "@google/genai";
 // Initialize the client with the environment API key
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const SYSTEM_INSTRUCTION = `Du er AutoSvar, en AI-receptionist for Tømrer Hansen.
+const SYSTEM_INSTRUCTION = `Du er Replypilot, en AI-receptionist for Tømrer Hansen.
 Din opgave er at håndtere indgående henvendelser via SMS fra kunder, der lige har ringet forgæves.
 
 Retningslinjer:
@@ -39,7 +39,7 @@ export const generateAIResponse = async (userMessage: string): Promise<string> =
     return response?.text || "Beklager, jeg fangede ikke det hele. Kan du gentage?";
   } catch (error) {
     console.error("AI Service Error:", error);
-    return "Systemfejl: Kunne ikke forbinde til AutoSvar serveren. Prøv igen senere.";
+    return "Systemfejl: Kunne ikke forbinde til Replypilot serveren. Prøv igen senere.";
   }
 };
 

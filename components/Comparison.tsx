@@ -56,14 +56,14 @@ export const Comparison: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Column 2: AutoSvar AI */}
+                    {/* Column 2: Replypilot AI */}
                     <div className="p-10 rounded-[40px] bg-black text-white shadow-2xl relative overflow-hidden flex flex-col justify-center">
                         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2 opacity-60"></div>
                         <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-indigo-600/10 rounded-full blur-[80px] translate-y-1/2 -translate-x-1/2"></div>
                         
                         <div className="relative z-10 h-full flex flex-col">
                             <div className="flex justify-between items-center mb-2">
-                                <h3 className="text-3xl font-bold text-white tracking-tight">AutoSvar AI</h3>
+                                <h3 className="text-3xl font-bold text-white tracking-tight">Replypilot AI</h3>
                                 <div className="bg-white/10 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
                                     <span className="text-xs font-bold text-blue-300 uppercase tracking-wider">Anbefalet</span>
                                 </div>

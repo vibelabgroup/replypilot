@@ -22,8 +22,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                    <div className="flex items-center gap-8">
                        <div className="flex items-center gap-2">
-                           <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-lg">A</div>
-                           <span className="font-bold text-lg tracking-tight">AutoSvar Dashboard</span>
+                           <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-lg">R</div>
+                           <span className="font-bold text-lg tracking-tight">Replypilot Dashboard</span>
                        </div>
                        
                        {/* Main Menu */}

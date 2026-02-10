@@ -2,7 +2,7 @@ import { Review, ChatMessage, Feature } from './types';
 
 export const REVIEWS: Review[] = [
     {
-        text: "Det har fuldstændig ændret min hverdag. Jeg plejede at stresse over ubesvarede opkald når jeg stod hos en kunde. Nu slapper jeg af velvidende at AutoSvar griber dem.",
+        text: "Det har fuldstændig ændret min hverdag. Jeg plejede at stresse over ubesvarede opkald når jeg stod hos en kunde. Nu slapper jeg af velvidende at Replypilot griber dem.",
         author: "Tømrer Jensen",
         role: "Mester",
         stars: 5
@@ -64,7 +64,7 @@ export const FEATURES: Feature[] = [
     {
         icon: 'Clock',
         title: "Arbejder 24/7",
-        description: "Weekender, aftener og ferier. AutoSvar tager aldrig fri, så du kan holde fri med god samvittighed."
+        description: "Weekender, aftener og ferier. Replypilot tager aldrig fri, så du kan holde fri med god samvittighed."
     },
     {
         icon: 'BellRing',

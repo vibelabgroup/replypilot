@@ -493,8 +493,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
             {/* Header */}
             <div className="h-20 border-b border-slate-100 bg-white flex items-center justify-between px-8 shrink-0">
                 <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-lg">A</div>
-                    <span className="font-bold text-slate-900">AutoSvar</span>
+                    <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-lg">R</div>
+                    <span className="font-bold text-slate-900">Replypilot</span>
                 </div>
                 <div className="flex items-center gap-4">
                     <div className="hidden md:flex items-center gap-2">

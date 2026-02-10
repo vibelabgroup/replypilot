@@ -26,7 +26,7 @@ export const Hero: React.FC = () => {
                         Aldrig mere <br /> <span className="text-transparent bg-clip-text bg-gradient-to-br from-blue-600 to-indigo-600">missede opkald.</span>
                     </h1>
                     <p className="text-xl text-slate-500 mb-10 leading-relaxed font-normal max-w-xl mx-auto md:mx-0">
-                        AutoSvar konverterer tabte opkald til SMS-samtaler med det samme. Helt automatisk. 24/7.
+                        Replypilot konverterer tabte opkald til SMS-samtaler med det samme. Helt automatisk. 24/7.
                     </p>
                     
                     <div className="flex flex-col sm:flex-row items-center justify-center md:justify-start gap-5 mb-12">
