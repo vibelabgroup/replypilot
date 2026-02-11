@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Phone, Clock, TrendingUp, Settings, LogOut, MessageSquare, User, Calendar, Mail, MapPin, X, ChevronRight as ChevronRightIcon } from 'lucide-react';
 
 interface DashboardProps {
@@ -7,6 +7,28 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     const [selectedLead, setSelectedLead] = useState<any>(null);
+    const [companySettings, setCompanySettings] = useState<any | null>(null);
+    const [aiSettings, setAiSettings] = useState<any | null>(null);
+
+    useEffect(() => {
+        const fetchSettings = async () => {
+            try {
+                const apiBase =
+                    import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+                const res = await fetch(`${apiBase}/api/settings`, {
+                    credentials: 'include',
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    setCompanySettings(data.company);
+                    setAiSettings(data.ai);
+                }
+            } catch (err) {
+                console.warn('Kunne ikke hente indstillinger', err);
+            }
+        };
+        fetchSettings();
+    }, []);
 
     const leads = [
         { name: "Morten Jensen", time: "10:42", topic: "Nyt tag", msg: "Spørger til pris på tagrenovering af 140m2 hus...", email: "morten@mail.dk", phone: "20 30 40 50", address: "Hovedgaden 12, 4000 Roskilde" },
@@ -133,11 +155,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                     </div>
                                     <div className="flex items-center justify-between text-sm text-slate-400 border-b border-white/10 pb-2">
                                         <span>Tone</span>
-                                        <span className="text-white">Professionel</span>
+                                        <span className="text-white">
+                                            {aiSettings?.tone || 'Professionel'}
+                                        </span>
                                     </div>
                                     <div className="flex items-center justify-between text-sm text-slate-400 pb-2">
                                         <span>Viderestilling</span>
-                                        <span className="text-white">Aktiv</span>
+                                        <span className="text-white">
+                                            {companySettings?.forwarding_number || 'Aktiv'}
+                                        </span>
                                     </div>
                                 </div>
 

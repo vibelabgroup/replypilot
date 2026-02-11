@@ -2,9 +2,10 @@ import React from 'react';
 
 interface NavbarProps {
     onOpenModal: () => void;
+    onLogin?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenModal }) => {
+export const Navbar: React.FC<NavbarProps> = ({ onOpenModal, onLogin }) => {
     return (
         <nav className="fixed w-full z-50 transition-all duration-300 glass-nav">
             <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
@@ -18,7 +19,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenModal }) => {
                     <a href="#pricing" className="hover:text-black transition-colors">Priser</a>
                 </div>
                 <div className="flex items-center gap-6">
-                    <button className="text-sm font-semibold text-slate-500 hover:text-black transition-colors">
+                    <button
+                        className="text-sm font-semibold text-slate-500 hover:text-black transition-colors"
+                        onClick={onLogin}
+                    >
                         Log ind
                     </button>
                     <button 

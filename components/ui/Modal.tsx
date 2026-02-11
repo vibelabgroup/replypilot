@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { X, Loader2, Lock, CreditCard, CheckCircle2 } from 'lucide-react';
-import { processPayment } from '../../services/paymentService';
+import { X, Loader2, CheckCircle2 } from 'lucide-react';
 
 interface ModalProps {
     isOpen: boolean;
@@ -11,49 +10,59 @@ interface ModalProps {
 export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onPaymentComplete }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
-    const [step, setStep] = useState<'details' | 'payment'>('details');
     
     // Pre-filled for better demo experience
     const [formData, setFormData] = useState({
         name: 'Mester Hansen',
         email: 'mester@hansen-byg.dk',
-        phone: '20304050',
-        cardNumber: '4571 1234 5678 9000',
-        expiry: '12/26',
-        cvc: '123'
+        phone: '20304050'
     });
 
     if (!isOpen) return null;
-
-    const handleNext = (e: React.FormEvent) => {
-        e.preventDefault();
-        setStep('payment');
-    };
 
     const handlePayment = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
         try {
-            await processPayment({
-                name: formData.name,
-                email: formData.email,
-                cardNumber: formData.cardNumber,
-                expiry: formData.expiry,
-                cvc: formData.cvc
-            });
-            
-            // Show success state
             setIsSuccess(true);
-            
-            // Wait 2 seconds then trigger onboarding
-            setTimeout(() => {
-                onClose();
-                onPaymentComplete();
-            }, 2000);
+
+            // Persist email locally so we can later verify subscription status
+            try {
+                window.localStorage.setItem('replypilot_email', formData.email);
+            } catch {
+                // Ignore storage errors; flow still continues
+            }
+
+            const apiBase =
+                import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+
+            const response = await fetch(`${apiBase}/create-checkout-session`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    name: formData.name,
+                    email: formData.email,
+                    phone: formData.phone,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error("Kunne ikke starte Stripe betaling");
+            }
+
+            const data = await response.json();
+            if (!data.url) {
+                throw new Error("Ugyldigt svar fra betalingsserver");
+            }
+
+            // Redirect to Stripe-hosted checkout page
+            window.location.href = data.url;
 
         } catch (error) {
             console.error(error);
-            alert("Betalingen blev afvist. Prøv venligst igen.");
+            alert("Noget gik galt med betalingen. Prøv venligst igen.");
             setIsLoading(false);
         }
     };
@@ -84,15 +93,14 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onPaymentComplete
                     <>
                         <div className="mb-8">
                             <h3 className="text-2xl font-bold text-slate-900 mb-2">
-                                {step === 'details' ? 'Opret din konto' : 'Sikker betaling'}
+                                Opret din konto
                             </h3>
                             <p className="text-slate-500 text-sm">
-                                {step === 'details' ? 'Start med dine kontaktoplysninger.' : '14 dages fuld tilfredshedsgaranti.'}
+                                Start med dine kontaktoplysninger. Selve betalingen håndteres sikkert af Stripe.
                             </p>
                         </div>
 
-                        {step === 'details' ? (
-                            <form onSubmit={handleNext} className="space-y-4">
+                        <form onSubmit={handlePayment} className="space-y-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">Navn</label>
                                     <input 
@@ -125,74 +133,6 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onPaymentComplete
                                         value={formData.phone}
                                         onChange={e => setFormData({...formData, phone: e.target.value})}
                                     />
-                                </div>
-
-                                <button 
-                                    type="submit" 
-                                    className="w-full h-14 mt-4 bg-black text-white font-bold rounded-xl hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-lg"
-                                >
-                                    Fortsæt
-                                </button>
-                            </form>
-                        ) : (
-                            <form onSubmit={handlePayment} className="space-y-4">
-                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-6">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-sm font-medium text-slate-900">Pro Abonnement</span>
-                                        <span className="text-sm font-bold text-slate-900">1.995 kr.</span>
-                                    </div>
-                                    <div className="flex justify-between items-center text-xs text-slate-500">
-                                        <span>Moms (25%)</span>
-                                        <span>498,75 kr.</span>
-                                    </div>
-                                    <div className="border-t border-slate-200 my-2"></div>
-                                    <div className="flex justify-between items-center font-bold text-slate-900">
-                                        <span>Total</span>
-                                        <span>2.493,75 kr.</span>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">Kortnummer</label>
-                                    <div className="relative">
-                                        <input 
-                                            type="text" 
-                                            required
-                                            className="w-full h-12 pl-12 pr-4 rounded-xl bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                                            placeholder="0000 0000 0000 0000"
-                                            value={formData.cardNumber}
-                                            onChange={e => setFormData({...formData, cardNumber: e.target.value})}
-                                        />
-                                        <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-4">
-                                    <div className="w-1/2">
-                                        <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">Udløb</label>
-                                        <input 
-                                            type="text" 
-                                            required
-                                            className="w-full h-12 px-4 rounded-xl bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                                            placeholder="MM/ÅÅ"
-                                            value={formData.expiry}
-                                            onChange={e => setFormData({...formData, expiry: e.target.value})}
-                                        />
-                                    </div>
-                                    <div className="w-1/2">
-                                        <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">CVC</label>
-                                        <div className="relative">
-                                            <input 
-                                                type="text" 
-                                                required
-                                                className="w-full h-12 pl-10 pr-4 rounded-xl bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                                                placeholder="123"
-                                                value={formData.cvc}
-                                                onChange={e => setFormData({...formData, cvc: e.target.value})}
-                                            />
-                                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                                        </div>
-                                    </div>
                                 </div>
 
                                 <button 
