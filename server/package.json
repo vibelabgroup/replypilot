@@ -1,0 +1,41 @@
+{
+  "name": "replypilot-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs",
+    "dev": "nodemon index.mjs",
+    "worker:sms": "node workers/index.mjs sms",
+    "worker:notifications": "node workers/index.mjs notifications",
+    "worker:ai": "node workers/index.mjs ai",
+    "worker:all": "node workers/index.mjs all",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "cookie-parser": "^1.4.7",
+    "bcryptjs": "^2.4.3",
+    "pg": "^8.13.1",
+    "ioredis": "^5.4.2",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
+    "zod": "^3.24.1",
+    "stripe": "^16.12.0",
+    "@google/genai": "^1.38.0",
+    "twilio": "^5.4.2",
+    "@sendgrid/mail": "^8.1.4",
+    "@sentry/node": "^8.54.0",
+    "express-rate-limit": "^7.5.0",
+    "uuid": "^11.0.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9",
+    "vitest": "^2.1.9",
+    "@vitest/coverage-v8": "^2.1.9",
+    "supertest": "^7.0.0"
+  }
+}

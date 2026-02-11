@@ -51,7 +51,7 @@ export const Calculator: React.FC = () => {
                     {/* Controls */}
                     <div className="p-12 lg:p-20 lg:w-1/2 flex flex-col justify-center bg-white">
                         <h2 className="text-3xl font-bold mb-2 tracking-tight">Hvad koster stilhed?</h2>
-                        <p class="text-slate-500 mb-12">Træk i skyderne og se potentialet.</p>
+                        <p className="text-slate-500 mb-12">Træk i skyderne og se potentialet.</p>
                         
                         <div className="space-y-12">
                             {/* Slider 1 */}
@@ -60,14 +60,14 @@ export const Calculator: React.FC = () => {
                                     <label className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Missede opkald / dag</label>
                                     <div className="text-3xl font-bold text-slate-900">{calls}</div>
                                 </div>
-                                <input 
-                                    type="range" 
-                                    min="1" 
-                                    max="15" 
-                                    step="1" 
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="15"
+                                    step="1"
                                     value={calls}
                                     onChange={(e) => setCalls(parseInt(e.target.value))}
-                                    className="accent-black"
+                                    className="w-full range-input"
                                 />
                             </div>
 
@@ -77,28 +77,32 @@ export const Calculator: React.FC = () => {
                                     <label className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Opgaveværdi</label>
                                     <div className="text-3xl font-bold text-slate-900">{formatValueDisplay(value)}</div>
                                 </div>
-                                <input 
-                                    type="range" 
-                                    min="1000" 
-                                    max="50000" 
-                                    step="1000" 
+                                <input
+                                    type="range"
+                                    min="1000"
+                                    max="50000"
+                                    step="1000"
                                     value={value}
                                     onChange={(e) => setValue(parseInt(e.target.value))}
-                                    className="accent-black"
+                                    className="w-full range-input"
                                 />
                             </div>
                         </div>
                     </div>
 
                     {/* Result */}
-                    <div className="bg-black p-12 lg:p-20 lg:w-1/2 text-white flex flex-col justify-center relative overflow-hidden">
+                    <div className="bg-black p-10 md:p-12 lg:p-20 lg:w-1/2 text-white flex flex-col justify-center relative overflow-hidden">
                         {/* Decorative Gradients */}
                         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/30 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2"></div>
                         <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-600/20 rounded-full blur-[80px] translate-y-1/2 -translate-x-1/2"></div>
                         
                         <div className="relative z-10">
-                            <span className="text-blue-400 font-medium tracking-wide text-sm uppercase mb-4 block">Ekstra omsætning pr. md.</span>
-                            <div className="text-6xl lg:text-7xl font-bold tracking-tighter mb-6">{formatCurrency(displayRevenue)}</div>
+                            <span className="text-blue-400 font-medium tracking-wide text-xs sm:text-sm uppercase mb-4 block">
+                                Ekstra omsætning pr. md.
+                            </span>
+                            <div className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tighter mb-6 break-words">
+                                {formatCurrency(displayRevenue)}
+                            </div>
                             <div className="h-1 w-20 bg-blue-500 rounded-full mb-8"></div>
                             <p className="text-slate-400 leading-relaxed text-lg font-light">
                                 Baseret på at vi redder bare <span className="text-white font-medium">30%</span> af dine missede opkald. De fleste oplever højere rater.

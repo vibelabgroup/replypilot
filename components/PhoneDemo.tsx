@@ -8,10 +8,14 @@ export const PhoneDemo: React.FC = () => {
     const [inputValue, setInputValue] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [hasActivated, setHasActivated] = useState(false);
+    const initializedRef = useRef(false);
     const feedRef = useRef<HTMLDivElement>(null);
 
     // Initialize the demo
     useEffect(() => {
+        if (initializedRef.current) return;
+        initializedRef.current = true;
+
         const startDemo = async () => {
             initChatSession();
             
@@ -76,11 +80,11 @@ export const PhoneDemo: React.FC = () => {
     };
 
     return (
-        <div className="relative bg-black rounded-[3rem] h-[680px] w-[340px] shadow-2xl flex flex-col select-none transform transition-transform duration-700 hover:scale-[1.02] border-[8px] border-black ring-1 ring-white/10">
+        <div className="relative bg-black rounded-[3rem] h-[660px] w-[340px] shadow-2xl flex flex-col select-none transform transition-transform duration-700 hover:scale-[1.02] border-[8px] border-black ring-1 ring-white/10">
             {/* Screen */}
             <div className="rounded-[2.5rem] overflow-hidden w-full h-full bg-white relative flex flex-col">
                 {/* Dynamic Island / Notch Area */}
-                <div className="h-14 bg-white flex justify-between items-center px-8 pt-3 z-10 shrink-0">
+                <div className="h-11 bg-white flex justify-between items-center px-7 pt-2.5 z-10 shrink-0">
                     <span className="text-sm font-semibold text-black">09:41</span>
                     <div className="flex gap-1.5">
                         <div className="w-5 h-3 bg-black rounded-[2px]"></div>
@@ -91,7 +95,7 @@ export const PhoneDemo: React.FC = () => {
                 {/* Chat Interface */}
                 <div className="flex-1 flex flex-col relative overflow-hidden bg-white">
                     {/* Contact Header */}
-                    <div className="flex flex-col items-center py-4 border-b border-slate-50 bg-white/80 backdrop-blur-md z-10 sticky top-0">
+                    <div className="flex flex-col items-center py-2.5 border-b border-slate-50 bg-white/80 backdrop-blur-md z-10 sticky top-0">
                         <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-2">
                             <User className="w-7 h-7" />
                         </div>
@@ -99,7 +103,7 @@ export const PhoneDemo: React.FC = () => {
                     </div>
 
                     {/* Feed */}
-                    <div ref={feedRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide bg-white pb-20">
+                    <div ref={feedRef} className="flex-1 overflow-y-auto px-4 pt-3 pb-16 space-y-4 scrollbar-hide bg-white">
                         {messages.map((msg) => (
                             <div 
                                 key={msg.id} 
@@ -137,7 +141,7 @@ export const PhoneDemo: React.FC = () => {
                         )}
                         
                         {!hasActivated && messages.length > 2 && (
-                            <div className="text-center mt-4">
+                            <div className="text-center mt-2">
                                 <span className="inline-block bg-blue-50 text-blue-600 text-[10px] font-bold px-3 py-1 rounded-full animate-pulse">
                                     Prøv at skrive herunder 👇
                                 </span>
@@ -146,7 +150,7 @@ export const PhoneDemo: React.FC = () => {
                     </div>
 
                     {/* Input Bar */}
-                    <div className="p-3 bg-white border-t border-slate-100 shrink-0 absolute bottom-0 w-full">
+                    <div className="px-3 py-2 bg-white border-t border-slate-100 shrink-0 absolute bottom-0 w-full">
                         <form onSubmit={handleSendMessage} className="flex items-center gap-2">
                             <input
                                 type="text"

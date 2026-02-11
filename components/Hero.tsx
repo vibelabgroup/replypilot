@@ -11,8 +11,8 @@ export const Hero: React.FC = () => {
 
             <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row items-center gap-16 md:gap-24">
                 
-                {/* Phone Demo (Left) */}
-                <div className="w-full md:w-1/2 flex justify-center md:justify-end order-2 md:order-1 fade-in-up">
+                {/* Phone Demo (Left - Desktop/Tablet) */}
+                <div className="hidden md:flex w-full md:w-1/2 justify-center md:justify-end order-2 md:order-1 fade-in-up">
                     <PhoneDemo />
                 </div>
 
@@ -22,9 +22,15 @@ export const Hero: React.FC = () => {
                         <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                         AI Receptionist
                     </div>
-                    <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold tracking-tighter text-slate-900 mb-8 leading-[0.95]">
+                    <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold tracking-tighter text-slate-900 mb-6 md:mb-8 leading-[0.95]">
                         Aldrig mere <br /> <span className="text-transparent bg-clip-text bg-gradient-to-br from-blue-600 to-indigo-600">missede opkald.</span>
                     </h1>
+
+                    {/* Phone Demo (Inline - Mobile) */}
+                    <div className="mb-6 md:hidden flex justify-center">
+                        <PhoneDemo />
+                    </div>
+
                     <p className="text-xl text-slate-500 mb-10 leading-relaxed font-normal max-w-xl mx-auto md:mx-0">
                         Replypilot konverterer tabte opkald til SMS-samtaler med det samme. Helt automatisk. 24/7.
                     </p>

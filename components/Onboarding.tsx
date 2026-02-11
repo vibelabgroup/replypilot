@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { OnboardingData } from '../types';
 import { Bot, Building2, CheckCircle2, ChevronRight, Bell, Sparkles, Smartphone, Globe, Search, Database, Mail, MessageSquare, Loader2, MapPin, Calendar, FileText, BadgeCheck, Map, Clock, Pencil, ExternalLink } from 'lucide-react';
 import { analyzeCompanyInfo } from '../services/aiService';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, '');
 
 interface OnboardingProps {
     onComplete: () => void;
@@ -43,6 +45,82 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
             emailAddress: ''
         }
     });
+
+    // The Twilio number that this tenant should forward to.
+    // We either load an existing one or provision a new one
+    // when onboarding is completed.
+    const [twilioNumber, setTwilioNumber] = useState<string | null>(null);
+    const [provisioningNumber, setProvisioningNumber] = useState(false);
+
+    // Preload any existing settings so onboarding "remembers" what was entered
+    useEffect(() => {
+        const loadInitialSettings = async () => {
+            try {
+                const [meRes, settingsRes] = await Promise.all([
+                    fetch(`${API_BASE}/api/auth/me`, {
+                        credentials: 'include',
+                    }).catch(() => null),
+                    fetch(`${API_BASE}/api/settings`, {
+                        credentials: 'include',
+                    }).catch(() => null),
+                ]);
+
+                if (!meRes && !settingsRes) return;
+
+                const meJson = meRes && meRes.ok ? await meRes.json().catch(() => null) : null;
+                const settingsJson = settingsRes && settingsRes.ok ? await settingsRes.json().catch(() => null) : null;
+
+                const existingCompany = settingsJson?.settings?.company;
+                const existingNotifications = settingsJson?.settings?.notifications;
+                const currentUser = meJson?.user;
+                const existingPhoneNumbers = settingsJson?.settings?.phoneNumbers || [];
+
+                // If we already have a Twilio number, remember it so we
+                // can show the correct forwarding code on the final step.
+                if (existingPhoneNumbers.length > 0) {
+                    const primary = existingPhoneNumbers[0];
+                    if (primary?.phone_number) {
+                        setTwilioNumber(primary.phone_number);
+                    }
+                }
+
+                setData(prev => {
+                    let next = { ...prev };
+
+                    // Prefer saved company settings; otherwise fall back to customer name
+                    const companyNameFromSettings = existingCompany?.company_name;
+                    const companyNameFromCustomer = currentUser?.customer?.name;
+                    if (!next.companyName && (companyNameFromSettings || companyNameFromCustomer)) {
+                        next.companyName = companyNameFromSettings || companyNameFromCustomer;
+                    }
+
+                    // Pre-fill website if we already have it in settings
+                    if (!next.website && existingCompany?.website) {
+                        next.website = existingCompany.website;
+                    }
+
+                    // Pre-fill notification preferences (SMS + email) from existing settings / user
+                    const smsPhoneFromSettings = existingNotifications?.sms_phone;
+                    const emailFromSettings = existingNotifications?.email;
+                    const emailFromUser = currentUser?.email;
+
+                    next.notifications = {
+                        ...next.notifications,
+                        sms: existingNotifications?.sms_enabled ?? next.notifications.sms,
+                        email: existingNotifications?.email_enabled ?? next.notifications.email,
+                        phoneNumber: next.notifications.phoneNumber || smsPhoneFromSettings || '',
+                        emailAddress: next.notifications.emailAddress || emailFromSettings || emailFromUser || '',
+                    };
+
+                    return next;
+                });
+            } catch (err) {
+                console.error('Failed to preload onboarding settings', err);
+            }
+        };
+
+        loadInitialSettings();
+    }, []);
 
     const updateStepStatus = (id: number, status: 'active' | 'done') => {
         setAnalysisSteps(prev => prev.map(s => s.id === id ? { ...s, status } : s));
@@ -90,7 +168,151 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         setViewState('results');
     };
 
-    const handleNext = () => {
+    // Persist current onboarding configuration to backend settings.
+    const saveSettings = async () => {
+        // Normalize website to a valid URL or empty string
+        const rawWebsite = data.website?.trim() || '';
+        const website =
+            !rawWebsite
+                ? ''
+                : rawWebsite.startsWith('http://') || rawWebsite.startsWith('https://')
+                    ? rawWebsite
+                    : `https://${rawWebsite}`;
+
+        // Company settings payload (matches companySettingsSchema)
+        const companyPayload = {
+            companyName: data.companyName || 'Min virksomhed',
+            website,
+            industry: data.industry || undefined,
+            address: data.address || undefined,
+        };
+
+        // Build a rich system prompt for the AI based on onboarding data
+        const servicesText = (data.servicesList || []).join(', ');
+        const opening = data.openingHours || 'Man-fre 08-16';
+        const description = data.description || 'Ingen specifik beskrivelse angivet.';
+
+        const systemPrompt = [
+            `Du er en AI-receptionist for virksomheden "${data.companyName || 'kunden'}".`,
+            description && `Virksomhedsbeskrivelse: ${description}`,
+            servicesText && `Ydelser / services: ${servicesText}.`,
+            data.address && `Adresse: ${data.address}.`,
+            data.serviceArea && `Dækningsområde: ${data.serviceArea}.`,
+            `Åbningstider: ${opening}.`,
+            data.assistantName && `Du præsenterer dig som "${data.assistantName}".`,
+            'Svar altid på dansk, vær hjælpsom og kvalificér kundeemner ved at stille opklarende spørgsmål.',
+        ]
+            .filter(Boolean)
+            .join(' ');
+
+        // AI settings payload (matches aiSettingsSchema)
+        const aiPayload = {
+            systemPrompt,
+            responseTone: (data.tone as any) || 'professional',
+            language: 'da',
+            autoResponseEnabled: true,
+            autoResponseDelaySeconds: 30,
+            workingHoursOnly: true,
+            fallbackMessage:
+                'Tak for din henvendelse. Vi vender tilbage hurtigst muligt med et konkret svar.',
+        };
+
+        // Notification preferences payload (matches notificationPreferencesSchema)
+        const notifPayload = {
+            emailEnabled: !!data.notifications.email,
+            emailNewLead: true,
+            emailNewMessage: false,
+            emailDailyDigest: true,
+            emailWeeklyReport: true,
+            smsEnabled: !!data.notifications.sms,
+            smsPhone: data.notifications.phoneNumber || '',
+            smsNewLead: true,
+            smsNewMessage: false,
+            digestType: 'daily' as const,
+            digestTime: '09:00',
+        };
+
+        await Promise.all([
+            fetch(`${API_BASE}/api/settings/company`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(companyPayload),
+            }).catch((err) => {
+                console.error('Failed to save company settings from onboarding', err);
+            }),
+            fetch(`${API_BASE}/api/settings/ai`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(aiPayload),
+            }).catch((err) => {
+                console.error('Failed to save AI settings from onboarding', err);
+            }),
+            fetch(`${API_BASE}/api/settings/notifications`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(notifPayload),
+            }).catch((err) => {
+                console.error('Failed to save notification settings from onboarding', err);
+            }),
+        ]);
+    };
+
+    const handleNext = async () => {
+        // When finishing notifications (step 3), make sure we have
+        // a Twilio number provisioned before showing the forwarding code.
+        if (step === 3) {
+            try {
+                setProvisioningNumber(true);
+
+                // 1) Check if a number already exists
+                const existingRes = await fetch(`${API_BASE}/api/phone-numbers`, {
+                    credentials: 'include',
+                }).catch(() => null);
+
+                let number: string | null = null;
+
+                if (existingRes && existingRes.ok) {
+                    const body = await existingRes.json().catch(() => null);
+                    const list = body?.phoneNumbers || [];
+                    if (list.length > 0 && list[0]?.phone_number) {
+                        number = list[0].phone_number;
+                    }
+                }
+
+                // 2) If no number yet, provision one now for this tenant
+                if (!number) {
+                    const provisionRes = await fetch(`${API_BASE}/api/phone-numbers`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                    }).catch(() => null);
+
+                    if (provisionRes && provisionRes.ok) {
+                        const body = await provisionRes.json().catch(() => null);
+                        number = body?.phoneNumber || body?.phone_number || null;
+                    } else {
+                        console.error('Failed to provision Twilio number during onboarding');
+                    }
+                }
+
+                if (number) {
+                    setTwilioNumber(number);
+                }
+
+                // After notifications and phone-number provisioning, persist
+                // the full onboarding configuration so it is always available
+                // in the dashboard, even if the user closes the wizard early.
+                await saveSettings();
+            } catch (err) {
+                console.error('Error ensuring Twilio number during onboarding', err);
+            } finally {
+                setProvisioningNumber(false);
+            }
+        }
+
         if (step < 4) {
             setStep(prev => prev + 1);
         }
@@ -456,6 +678,20 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         </div>
     );
 
+    const handleComplete = async () => {
+        // When onboarding finishes, ensure settings are persisted so
+        // the dashboard "Konfigurer" views are already pre-filled.
+        try {
+            await saveSettings();
+        } catch (err) {
+            console.error('Onboarding settings save failed', err);
+            // We still allow the user to proceed to dashboard even if
+            // part of the onboarding persistence fails.
+        } finally {
+            onComplete();
+        }
+    };
+
     const renderStep4 = () => (
         <div className="text-center space-y-6 animate-in fade-in zoom-in duration-500">
              <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 text-green-600 shadow-xl shadow-green-100/50 relative">
@@ -469,18 +705,22 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                 </p>
              </div>
 
-             <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl max-w-sm mx-auto my-8 relative overflow-hidden">
+            <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl max-w-sm mx-auto my-8 relative overflow-hidden">
                  <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600 rounded-full blur-[50px] opacity-20"></div>
                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Aktiver viderestilling nu</p>
                  <div className="flex items-center justify-center gap-3 bg-white/10 p-4 rounded-xl border border-white/10">
                     <Smartphone className="w-6 h-6 text-blue-400" />
-                    <span className="text-2xl font-mono font-bold tracking-wider">**61*20405060#</span>
+                    <span className="text-2xl font-mono font-bold tracking-wider">
+                        {/* Forwarding code to the tenant's Twilio number.
+                           We strip the leading + for the GSM service code. */}
+                        {`**61*${(twilioNumber || '+4512345678').replace(/^\+/, '')}#`}
+                    </span>
                  </div>
                  <p className="text-xs text-slate-400 mt-3">Tast koden på din mobil og ring op for at aktivere.</p>
              </div>
 
              <button 
-                onClick={onComplete}
+                onClick={handleComplete}
                 className="text-slate-500 hover:text-slate-900 font-medium text-sm flex items-center justify-center gap-1 mx-auto group cursor-pointer"
              >
                 Gå til dashboard <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -532,11 +772,13 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                                 disabled={
                                     (step === 1 && viewState !== 'results') ||
                                     (step === 2 && !data.assistantName) ||
-                                    (step === 3 && (!data.notifications.sms && !data.notifications.email))
+                                    (step === 3 && ((!data.notifications.sms && !data.notifications.email) || provisioningNumber))
                                 }
                                 className="bg-black text-white px-8 py-4 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-slate-200 hover:-translate-y-1"
                             >
-                                {step === 3 ? 'Afslut opsætning' : 'Næste trin'}
+                                {step === 3
+                                    ? (provisioningNumber ? 'Tilknyt telefonnummer...' : 'Afslut opsætning')
+                                    : 'Næste trin'}
                                 <ChevronRight className="w-5 h-5" />
                             </button>
                         </div>

@@ -147,8 +147,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onPaymentComplete
                                     Ved betaling accepterer du vores handelsbetingelser.
                                 </p>
                             </form>
-                        )}
-                    </>
+                        </>
                 )}
             </div>
         </div>

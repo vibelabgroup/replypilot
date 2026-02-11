@@ -1,0 +1,157 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: replypilot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: replypilot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./server/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U replypilot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - replypilot-network
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - replypilot-network
+
+  # Backend API
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      DATABASE_URL: postgresql://replypilot:${POSTGRES_PASSWORD:-changeme}@postgres:5432/replypilot?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0
+      SESSION_SECRET: ${SESSION_SECRET}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_PRICE_ID: ${STRIPE_PRICE_ID}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      SENTRY_DSN: ${SENTRY_DSN}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - replypilot-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  # Background Workers
+  worker-sms:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.worker
+    command: npm run worker:sms
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://replypilot:${POSTGRES_PASSWORD:-changeme}@postgres:5432/replypilot?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      SENTRY_DSN: ${SENTRY_DSN}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - replypilot-network
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+
+  worker-notifications:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.worker
+    command: npm run worker:notifications
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://replypilot:${POSTGRES_PASSWORD:-changeme}@postgres:5432/replypilot?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      SENTRY_DSN: ${SENTRY_DSN}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - replypilot-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - frontend_dist:/usr/share/nginx/html:ro
+    depends_on:
+      - api
+    networks:
+      - replypilot-network
+    restart: unless-stopped
+
+  # Frontend Build (static files)
+  frontend-build:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    volumes:
+      - frontend_dist:/app/dist
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api.replypilot.dk}
+      VITE_API_KEY: ${GEMINI_API_KEY}
+    command: npm run build
+
+volumes:
+  postgres_data:
+  redis_data:
+  frontend_dist:
+
+networks:
+  replypilot-network:
+    driver: bridge

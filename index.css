@@ -1,0 +1,52 @@
+/* Basic global styles for Replypilot landing page.
+   This file mainly exists to avoid a 404 for /index.css in production.
+   Tailwind handles almost all styling via CDN. */
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Calculator slider styling to match blue theme */
+#calculator input[type="range"].range-input {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 9999px;
+  background: #e5e7eb; /* slate-200 */
+  cursor: pointer;
+}
+
+#calculator input[type="range"].range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: #2563eb; /* blue-600 */
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+  border: 3px solid #eff6ff; /* blue-50 */
+  margin-top: -8px; /* center thumb vertically */
+}
+
+#calculator input[type="range"].range-input::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: #e5e7eb;
+}
+
+#calculator input[type="range"].range-input::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: #2563eb;
+  border: 3px solid #eff6ff;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+}
+
+

@@ -27,7 +27,7 @@ export const Pricing: React.FC<PricingProps> = ({ onStart }) => {
                                     <span className="font-bold text-lg">1</span>
                                 </div>
                                 <div>
-                                    <h4 class="font-bold text-slate-900 text-lg mb-1">Tjen pengene hjem dag 1</h4>
+                                    <h4 className="font-bold text-slate-900 text-lg mb-1">Tjen pengene hjem dag 1</h4>
                                     <p className="text-slate-500 leading-relaxed">Ingen store startgebyrer. Du betaler en fast lav månedlig pris, der hurtigt tjener sig selv ind.</p>
                                 </div>
                             </div>
@@ -36,7 +36,7 @@ export const Pricing: React.FC<PricingProps> = ({ onStart }) => {
                                     <span className="font-bold text-lg">2</span>
                                 </div>
                                 <div>
-                                    <h4 class="font-bold text-slate-900 text-lg mb-1">Ingen risiko</h4>
+                                    <h4 className="font-bold text-slate-900 text-lg mb-1">Ingen risiko</h4>
                                     <p className="text-slate-500 leading-relaxed">Vi tilbyder 14 dages fuld tilfredshedsgaranti. Virker det ikke for dig, får du pengene tilbage.</p>
                                 </div>
                             </div>
@@ -45,7 +45,7 @@ export const Pricing: React.FC<PricingProps> = ({ onStart }) => {
                                     <span className="font-bold text-lg">3</span>
                                 </div>
                                 <div>
-                                    <h4 class="font-bold text-slate-900 text-lg mb-1">Vi klarer alt det tekniske</h4>
+                                    <h4 className="font-bold text-slate-900 text-lg mb-1">Vi klarer alt det tekniske</h4>
                                     <p className="text-slate-500 leading-relaxed">Du skal ikke røre en finger. Vi sætter det hele op, så det passer til din virksomhed.</p>
                                 </div>
                             </div>
@@ -62,15 +62,23 @@ export const Pricing: React.FC<PricingProps> = ({ onStart }) => {
                             
                             <div className="mb-10 pt-4">
                                 <div className="flex justify-between items-start mb-6">
-                                    <span className="inline-block py-1 px-3 rounded-full bg-slate-100 text-xs font-bold text-slate-900 uppercase tracking-widest">Founding Partner</span>
+                                    <span className="inline-block py-1 px-3 rounded-full bg-slate-100 text-xs font-bold text-slate-900 uppercase tracking-widest">
+                                        Tilbud gælder t.o.m 1/3/2026
+                                    </span>
                                     <div className="bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full">Spar 50%</div>
                                 </div>
-                                
-                                <div className="flex justify-start items-baseline gap-1">
-                                    <span className="text-6xl md:text-7xl font-bold text-slate-900 tracking-tighter">1.995</span>
-                                    <span className="text-xl font-medium text-slate-400">kr/md</span>
+
+                                <div className="flex justify-start items-end gap-2">
+                                    <span className="text-5xl sm:text-6xl md:text-7xl font-bold text-slate-900 tracking-tighter">
+                                        1.995
+                                    </span>
+                                    <div className="flex flex-col items-start leading-none">
+                                        <span className="text-lg md:text-xl font-medium text-slate-500">kr/md</span>
+                                        <span className="text-[10px] md:text-xs text-slate-400 mt-1 font-medium">
+                                            ekskl. moms
+                                        </span>
+                                    </div>
                                 </div>
-                                <p className="text-slate-400 text-sm mt-3 font-medium">ekskl. moms</p>
                             </div>
 
                             <div className="space-y-5 mb-12 text-left">
