@@ -10,14 +10,61 @@ import { Footer } from './components/Footer';
 import { Modal } from './components/ui/Modal';
 import { Onboarding } from './components/Onboarding';
 import { Dashboard } from './components/Dashboard';
+import { Auth } from './components/Auth';
 
 const App: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isOnboarding, setIsOnboarding] = useState(false);
     const [showDashboard, setShowDashboard] = useState(false);
+    const [showAuth, setShowAuth] = useState(false);
+    const [subscriptionChecked, setSubscriptionChecked] = useState(false);
 
     // Fade-in animation observer
     useEffect(() => {
+        const run = async () => {
+            // Detect Stripe checkout success redirect
+            const params = new URLSearchParams(window.location.search);
+            const isSuccess = params.get('checkout') === 'success';
+
+            if (isSuccess) {
+                let email: string | null = null;
+                try {
+                    email = window.localStorage.getItem('replypilot_email');
+                } catch {
+                    email = null;
+                }
+
+                if (email) {
+                    try {
+                        const apiBase =
+                            import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+                        const res = await fetch(
+                            `${apiBase}/api/subscription-status?email=${encodeURIComponent(email)}`
+                        );
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (!data.hasActiveSubscription) {
+                                console.warn(
+                                    'Checkout succeeded, but no active subscription found yet for',
+                                    email
+                                );
+                            }
+                        }
+                    } catch (error) {
+                        console.warn('Unable to verify subscription status after checkout', error);
+                    }
+                }
+
+                setIsOnboarding(true);
+                window.scrollTo(0, 0);
+                // Clean up URL so the flag does not persist
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+
+            setSubscriptionChecked(true);
+        };
+        run();
+
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
@@ -60,13 +107,31 @@ const App: React.FC = () => {
         return <Dashboard onLogout={handleLogout} />;
     }
 
+    // Prevent flicker during initial subscription check
+    if (!subscriptionChecked && !isOnboarding && !showDashboard) {
+        return null;
+    }
+
     if (isOnboarding) {
         return <Onboarding onComplete={handleOnboardingComplete} />;
     }
 
+    if (showAuth) {
+        return (
+            <Auth
+                initialMode="login"
+                onAuthenticated={() => {
+                    setShowAuth(false);
+                    setShowDashboard(true);
+                    window.scrollTo(0, 0);
+                }}
+            />
+        );
+    }
+
     return (
         <>
-            <Navbar onOpenModal={handleOpenModal} />
+            <Navbar onOpenModal={handleOpenModal} onLogin={() => setShowAuth(true)} />
             <main>
                 <Hero />
                 <Reviews />

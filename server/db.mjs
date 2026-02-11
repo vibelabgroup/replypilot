@@ -1,0 +1,325 @@
+import pg from "pg";
+
+const { Pool } = pg;
+
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+  console.error("Missing DATABASE_URL environment variable for Postgres.");
+  process.exit(1);
+}
+
+export const pool = new Pool({
+  connectionString,
+  max: 10,
+  idleTimeoutMillis: 30000,
+});
+
+export async function initDb() {
+  // Basic schema creation – safe to run multiple times
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      name TEXT,
+      phone TEXT,
+      stripe_customer_id TEXT UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      stripe_subscription_id TEXT UNIQUE NOT NULL,
+      stripe_price_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      current_period_start TIMESTAMPTZ,
+      current_period_end TIMESTAMPTZ,
+      cancel_at TIMESTAMPTZ,
+      canceled_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS stripe_events (
+      id SERIAL PRIMARY KEY,
+      stripe_event_id TEXT UNIQUE NOT NULL,
+      type TEXT NOT NULL,
+      processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      payload JSONB
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS company_settings (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER UNIQUE NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      company_name TEXT,
+      phone_number TEXT,
+      address TEXT,
+      opening_hours JSONB,
+      forwarding_number TEXT,
+      email_forward TEXT,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_settings (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER UNIQUE NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      tone TEXT,
+      language TEXT,
+      custom_instructions TEXT,
+      max_message_length INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS routing_rules (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      rules JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sms_templates (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
+
+export async function upsertCompanySettings(customerId, data) {
+  const result = await pool.query(
+    `
+      INSERT INTO company_settings (
+        customer_id,
+        company_name,
+        phone_number,
+        address,
+        opening_hours,
+        forwarding_number,
+        email_forward,
+        notes
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (customer_id) DO UPDATE
+      SET
+        company_name = EXCLUDED.company_name,
+        phone_number = EXCLUDED.phone_number,
+        address = EXCLUDED.address,
+        opening_hours = EXCLUDED.opening_hours,
+        forwarding_number = EXCLUDED.forwarding_number,
+        email_forward = EXCLUDED.email_forward,
+        notes = EXCLUDED.notes,
+        updated_at = NOW()
+      RETURNING *;
+    `,
+    [
+      customerId,
+      data.company_name || null,
+      data.phone_number || null,
+      data.address || null,
+      data.opening_hours || null,
+      data.forwarding_number || null,
+      data.email_forward || null,
+      data.notes || null,
+    ]
+  );
+
+  return result.rows[0];
+}
+
+export async function upsertAiSettings(customerId, data) {
+  const result = await pool.query(
+    `
+      INSERT INTO ai_settings (
+        customer_id,
+        tone,
+        language,
+        custom_instructions,
+        max_message_length
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (customer_id) DO UPDATE
+      SET
+        tone = EXCLUDED.tone,
+        language = EXCLUDED.language,
+        custom_instructions = EXCLUDED.custom_instructions,
+        max_message_length = EXCLUDED.max_message_length,
+        updated_at = NOW()
+      RETURNING *;
+    `,
+    [
+      customerId,
+      data.tone || null,
+      data.language || null,
+      data.custom_instructions || null,
+      data.max_message_length || null,
+    ]
+  );
+
+  return result.rows[0];
+}
+
+export async function getSettingsByCustomerId(customerId) {
+  const [companyRes, aiRes] = await Promise.all([
+    pool.query(
+      "SELECT * FROM company_settings WHERE customer_id = $1 LIMIT 1",
+      [customerId]
+    ),
+    pool.query("SELECT * FROM ai_settings WHERE customer_id = $1 LIMIT 1", [
+      customerId,
+    ]),
+  ]);
+
+  return {
+    company: companyRes.rows[0] || null,
+    ai: aiRes.rows[0] || null,
+  };
+}
+
+export async function recordStripeEventIfNew(eventId, type, payload) {
+  const result = await pool.query(
+    `
+      INSERT INTO stripe_events (stripe_event_id, type, payload)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (stripe_event_id) DO NOTHING
+      RETURNING id;
+    `,
+    [eventId, type, payload]
+  );
+
+  return result.rowCount > 0;
+}
+
+export async function upsertCustomer({ email, name, phone, stripeCustomerId }) {
+  if (!email) {
+    throw new Error("upsertCustomer requires an email");
+  }
+
+  const result = await pool.query(
+    `
+      INSERT INTO customers (email, name, phone, stripe_customer_id)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (email) DO UPDATE
+      SET
+        name = COALESCE(EXCLUDED.name, customers.name),
+        phone = COALESCE(EXCLUDED.phone, customers.phone),
+        stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, customers.stripe_customer_id),
+        updated_at = NOW()
+      RETURNING *;
+    `,
+    [email, name || null, phone || null, stripeCustomerId || null]
+  );
+
+  return result.rows[0];
+}
+
+export async function upsertSubscriptionFromStripeObject(customerId, stripeSub) {
+  const stripeSubscriptionId = stripeSub.id;
+  const price = stripeSub.items?.data?.[0]?.price;
+
+  const priceId = price?.id;
+  const status = stripeSub.status;
+
+  const currentPeriodStart = stripeSub.current_period_start
+    ? new Date(stripeSub.current_period_start * 1000)
+    : null;
+  const currentPeriodEnd = stripeSub.current_period_end
+    ? new Date(stripeSub.current_period_end * 1000)
+    : null;
+
+  const cancelAt = stripeSub.cancel_at
+    ? new Date(stripeSub.cancel_at * 1000)
+    : null;
+  const canceledAt = stripeSub.canceled_at
+    ? new Date(stripeSub.canceled_at * 1000)
+    : null;
+
+  const result = await pool.query(
+    `
+      INSERT INTO subscriptions (
+        customer_id,
+        stripe_subscription_id,
+        stripe_price_id,
+        status,
+        current_period_start,
+        current_period_end,
+        cancel_at,
+        canceled_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (stripe_subscription_id) DO UPDATE
+      SET
+        customer_id = EXCLUDED.customer_id,
+        stripe_price_id = EXCLUDED.stripe_price_id,
+        status = EXCLUDED.status,
+        current_period_start = EXCLUDED.current_period_start,
+        current_period_end = EXCLUDED.current_period_end,
+        cancel_at = EXCLUDED.cancel_at,
+        canceled_at = EXCLUDED.canceled_at,
+        updated_at = NOW()
+      RETURNING *;
+    `,
+    [
+      customerId,
+      stripeSubscriptionId,
+      priceId || null,
+      status,
+      currentPeriodStart,
+      currentPeriodEnd,
+      cancelAt,
+      canceledAt,
+    ]
+  );
+
+  return result.rows[0];
+}
+
+export async function findActiveSubscriptionByEmail(email) {
+  const result = await pool.query(
+    `
+      SELECT s.*
+      FROM subscriptions s
+      JOIN customers c ON s.customer_id = c.id
+      WHERE c.email = $1
+        AND s.status IN ('active', 'trialing', 'past_due')
+      ORDER BY s.current_period_end DESC
+      LIMIT 1;
+    `,
+    [email]
+  );
+
+  return result.rows[0] || null;
+}
+
