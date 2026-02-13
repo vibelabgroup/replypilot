@@ -146,7 +146,9 @@ services:
     volumes:
       - frontend_dist:/app/dist
     environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api.replypilot.dk}
+      # Default to same-origin API (replypilot.dk) – override if you later run
+      # a separate API subdomain behind nginx.
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://replypilot.dk}
       VITE_API_KEY: ${GEMINI_API_KEY}
     command: npm run build
 

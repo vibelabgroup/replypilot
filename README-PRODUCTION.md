@@ -138,74 +138,52 @@ npm run dev
 cd server && npm run worker:all
 ```
 
-### Production Deployment (Docker)
+### Production Deployment
 
-The stack runs as a single Docker Compose project. Nginx is the only public entrypoint:
+There are **two ways** to run Replypilot in production:
 
-- **replypilot.dk** (and www) → Nginx serves the frontend (static files) and proxies `/api/`, `/webhook` to the API.
-- **api.replypilot.dk** → Nginx proxies all traffic to the API (including `/create-checkout-session`, `/health`, `/api/*`, `/webhook`).
+- **A. Single-domain Node.js app (e.g. Hostinger)** – everything (frontend + API) served from `https://replypilot.dk`.  
+- **B. Docker + nginx (multi-domain)** – optional, for when you later move to your own VPS.
 
-**1. DNS**
+#### A. Single-domain Node.js app (Hostinger-style)
 
-Point both hostnames to your server’s IP:
+Use this when you deploy a Node.js app directly to a platform like Hostinger.
 
-- `replypilot.dk` and `www.replypilot.dk` → A (or CNAME) to the server.
-- `api.replypilot.dk` → A (or CNAME) to the same server.
+**1. Environment**
 
-**2. SSL certificates**
-
-Nginx expects TLS certificates at:
-
-- `./nginx/ssl/fullchain.pem`
-- `./nginx/ssl/privkey.pem`
-
-Create the directory and add your certs (e.g. from Let’s Encrypt):
-
-```bash
-mkdir -p nginx/ssl
-# Copy or symlink fullchain.pem and privkey.pem into nginx/ssl/
-```
-
-**3. Environment**
-
-Copy and edit env, then set at least:
+Set (for example in the hosting panel):
 
 - `FRONTEND_URL=https://replypilot.dk`
-- `VITE_API_BASE_URL=https://api.replypilot.dk` (used at frontend build time)
+- `VITE_API_BASE_URL=https://replypilot.dk` (frontend will call the same origin)
 - All other production vars from `.env.example` (DB, Redis, Stripe, Twilio, etc.)
 
-```bash
-cp .env.example .env
-# Edit .env
-```
+**2. Start command**
 
-**4. Build and run**
+Configure the app to run the Node server from the repo root, for example:
 
 ```bash
-docker compose up -d --build
+node server/index.mjs
 ```
 
-Start order: Postgres and Redis start → API and frontend build start → Nginx waits for API health and for the frontend build to finish, then starts. Frontend is built once into the `frontend_dist` volume with `VITE_API_BASE_URL` from `.env`.
+The Express app exposes (among others):
 
-**5. Migrations**
+- `POST /create-checkout-session` – Stripe Checkout session
+- `POST /webhook` – Stripe webhooks
+- `GET /health` – health check
 
-```bash
-docker compose exec api npm run db:migrate
+And CORS is locked to `FRONTEND_URL`, so `https://replypilot.dk` is the only allowed origin.
+
+**3. Stripe webhooks**
+
+In the Stripe dashboard, set your webhook URL to:
+
+```text
+https://replypilot.dk/webhook
 ```
 
-**6. Verify**
+#### B. Docker Deployment (optional, advanced)
 
-- Frontend: https://replypilot.dk  
-- API health: `curl https://api.replypilot.dk/health`  
-- Checkout (from the site) should call https://api.replypilot.dk/create-checkout-session and redirect to Stripe.
-
-**Updating the frontend** after code changes:
-
-```bash
-docker compose build frontend-build
-docker compose run --rm frontend-build
-docker compose restart nginx
-```
+If you later move to your own VPS and run the full Docker + nginx stack, you can use the `docker-compose.yml` and `nginx/nginx.conf` files in this repo. In that setup you may choose to run a separate API subdomain (e.g. `api.replypilot.dk`) and update `VITE_API_BASE_URL` accordingly.
 
 ## API Documentation
 
@@ -283,7 +261,7 @@ Required for production:
 | Variable | Description |
 |----------|-------------|
 | `FRONTEND_URL` | Canonical frontend URL, e.g. `https://replypilot.dk` (Stripe redirects, CORS) |
-| `VITE_API_BASE_URL` | API URL used by the frontend at build time, e.g. `https://api.replypilot.dk` |
+| `VITE_API_BASE_URL` | API URL used by the frontend at build time – for single-domain hosting this should also be `https://replypilot.dk` |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `REDIS_URL` | Redis connection string |
 | `SESSION_SECRET` | Session encryption key |
