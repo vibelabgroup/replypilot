@@ -119,7 +119,7 @@ services:
     deploy:
       replicas: 2
 
-  # Nginx Reverse Proxy (replypilot.dk = frontend, api.replypilot.dk = API)
+  # Nginx Reverse Proxy (single-domain: replypilot.dk)
   nginx:
     image: nginx:alpine
     ports:

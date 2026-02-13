@@ -19,7 +19,7 @@ Replypilot consists of:
 │                       Nginx (Reverse Proxy)                  │
 ├─────────────────────────────────────────────────────────────┤
 │  Frontend (Static)  │  API (Node.js/Express)  │  Workers     │
-│  replypilot.dk      │  api.replypilot.dk      │  Background  │
+│  replypilot.dk      │  replypilot.dk          │  Background  │
 └─────────────────────────────────────────────────────────────┘
            │                    │                    │
            ▼                    ▼                    ▼

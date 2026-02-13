@@ -89,7 +89,7 @@ jobs:
       - name: Build frontend
         run: npm run build
         env:
-          VITE_API_BASE_URL: https://api.replypilot.dk
+          VITE_API_BASE_URL: https://replypilot.dk
 
       - name: Build Docker images
         run: docker compose build
