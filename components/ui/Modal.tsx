@@ -10,7 +10,9 @@ interface ModalProps {
 export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onPaymentComplete }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
-    
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
+    const [acceptedDpa, setAcceptedDpa] = useState(false);
+
     // Pre-filled for better demo experience
     const [formData, setFormData] = useState({
         name: 'Mester Hansen',
@@ -135,17 +137,46 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onPaymentComplete
                                     />
                                 </div>
 
+                                <div className="space-y-3 mt-4">
+                                    <label className="flex items-start gap-3 cursor-pointer group">
+                                        <input
+                                            type="checkbox"
+                                            checked={acceptedTerms}
+                                            onChange={(e) => setAcceptedTerms(e.target.checked)}
+                                            className="mt-1 w-4 h-4 rounded border-slate-300 text-black focus:ring-black"
+                                        />
+                                        <span className="text-sm text-slate-600 group-hover:text-slate-900">
+                                            Jeg accepterer{' '}
+                                            <a href="/handelsbetingelser" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium" onClick={(e) => e.stopPropagation()}>
+                                                handelsbetingelserne
+                                            </a>
+                                            .
+                                        </span>
+                                    </label>
+                                    <label className="flex items-start gap-3 cursor-pointer group">
+                                        <input
+                                            type="checkbox"
+                                            checked={acceptedDpa}
+                                            onChange={(e) => setAcceptedDpa(e.target.checked)}
+                                            className="mt-1 w-4 h-4 rounded border-slate-300 text-black focus:ring-black"
+                                        />
+                                        <span className="text-sm text-slate-600 group-hover:text-slate-900">
+                                            Jeg accepterer{' '}
+                                            <a href="/databehandleraftale" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium" onClick={(e) => e.stopPropagation()}>
+                                                databehandleraftalen (DPA)
+                                            </a>
+                                            .
+                                        </span>
+                                    </label>
+                                </div>
+
                                 <button 
                                     type="submit" 
-                                    disabled={isLoading}
+                                    disabled={isLoading || !acceptedTerms || !acceptedDpa}
                                     className="w-full h-14 mt-4 bg-black text-white font-bold rounded-xl hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
                                 >
                                     {isLoading ? <Loader2 className="animate-spin w-5 h-5" /> : 'Betal & Start'}
                                 </button>
-                                
-                                <p className="text-[10px] text-center text-slate-400 mt-2">
-                                    Ved betaling accepterer du vores handelsbetingelser.
-                                </p>
                             </form>
                         </>
                 )}

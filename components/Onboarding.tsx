@@ -52,6 +52,10 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     const [twilioNumber, setTwilioNumber] = useState<string | null>(null);
     const [provisioningNumber, setProvisioningNumber] = useState(false);
 
+    // Step 4: acceptance of terms and DPA before completing onboarding
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
+    const [acceptedDpa, setAcceptedDpa] = useState(false);
+
     // Preload any existing settings so onboarding "remembers" what was entered
     useEffect(() => {
         const loadInitialSettings = async () => {
@@ -719,9 +723,43 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                  <p className="text-xs text-slate-400 mt-3">Tast koden på din mobil og ring op for at aktivere.</p>
              </div>
 
+             <div className="space-y-3 max-w-sm mx-auto text-left my-6">
+                <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                        type="checkbox"
+                        checked={acceptedTerms}
+                        onChange={(e) => setAcceptedTerms(e.target.checked)}
+                        className="mt-1 w-4 h-4 rounded border-slate-300 text-black focus:ring-black"
+                    />
+                    <span className="text-sm text-slate-600 group-hover:text-slate-900">
+                        Jeg har læst og accepterer{' '}
+                        <a href="/handelsbetingelser" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium" onClick={(e) => e.stopPropagation()}>
+                            handelsbetingelserne
+                        </a>
+                        .
+                    </span>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                        type="checkbox"
+                        checked={acceptedDpa}
+                        onChange={(e) => setAcceptedDpa(e.target.checked)}
+                        className="mt-1 w-4 h-4 rounded border-slate-300 text-black focus:ring-black"
+                    />
+                    <span className="text-sm text-slate-600 group-hover:text-slate-900">
+                        Jeg har læst og accepterer{' '}
+                        <a href="/databehandleraftale" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium" onClick={(e) => e.stopPropagation()}>
+                            databehandleraftalen (DPA)
+                        </a>
+                        .
+                    </span>
+                </label>
+             </div>
+
              <button 
                 onClick={handleComplete}
-                className="text-slate-500 hover:text-slate-900 font-medium text-sm flex items-center justify-center gap-1 mx-auto group cursor-pointer"
+                disabled={!acceptedTerms || !acceptedDpa}
+                className="text-slate-500 hover:text-slate-900 font-medium text-sm flex items-center justify-center gap-1 mx-auto group cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
              >
                 Gå til dashboard <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
              </button>

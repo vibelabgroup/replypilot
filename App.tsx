@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { Reviews } from './components/Reviews';
@@ -11,8 +12,12 @@ import { Modal } from './components/ui/Modal';
 import { Onboarding } from './components/Onboarding';
 import { Dashboard } from './components/Dashboard';
 import { Auth } from './components/Auth';
+import { Handelsbetingelser } from './components/pages/Handelsbetingelser';
+import { Privatlivspolitik } from './components/pages/Privatlivspolitik';
+import { Databehandleraftale } from './components/pages/Databehandleraftale';
 
 const App: React.FC = () => {
+    const location = useLocation();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isOnboarding, setIsOnboarding] = useState(false);
     const [showDashboard, setShowDashboard] = useState(false);
@@ -126,6 +131,36 @@ const App: React.FC = () => {
                     window.scrollTo(0, 0);
                 }}
             />
+        );
+    }
+
+    if (location.pathname === '/handelsbetingelser') {
+        return (
+            <>
+                <Navbar onOpenModal={handleOpenModal} onLogin={() => setShowAuth(true)} />
+                <Handelsbetingelser />
+                <Footer />
+            </>
+        );
+    }
+
+    if (location.pathname === '/privatliv') {
+        return (
+            <>
+                <Navbar onOpenModal={handleOpenModal} onLogin={() => setShowAuth(true)} />
+                <Privatlivspolitik />
+                <Footer />
+            </>
+        );
+    }
+
+    if (location.pathname === '/databehandleraftale') {
+        return (
+            <>
+                <Navbar onOpenModal={handleOpenModal} onLogin={() => setShowAuth(true)} />
+                <Databehandleraftale />
+                <Footer />
+            </>
         );
     }
 

@@ -11,15 +11,16 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@google/genai": "^1.38.0",
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "cookie-parser": "^1.4.7",
-    "bcryptjs": "^2.4.3",
     "lucide-react": "^0.563.0",
     "pg": "^8.13.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "@google/genai": "^1.38.0",
+    "react-router-dom": "^7.13.0",
     "stripe": "^16.12.0"
   },
   "devDependencies": {
