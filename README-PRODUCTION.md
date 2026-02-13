@@ -138,21 +138,73 @@ npm run dev
 cd server && npm run worker:all
 ```
 
-### Production Deployment
+### Production Deployment (Docker)
+
+The stack runs as a single Docker Compose project. Nginx is the only public entrypoint:
+
+- **replypilot.dk** (and www) → Nginx serves the frontend (static files) and proxies `/api/`, `/webhook` to the API.
+- **api.replypilot.dk** → Nginx proxies all traffic to the API (including `/create-checkout-session`, `/health`, `/api/*`, `/webhook`).
+
+**1. DNS**
+
+Point both hostnames to your server’s IP:
+
+- `replypilot.dk` and `www.replypilot.dk` → A (or CNAME) to the server.
+- `api.replypilot.dk` → A (or CNAME) to the same server.
+
+**2. SSL certificates**
+
+Nginx expects TLS certificates at:
+
+- `./nginx/ssl/fullchain.pem`
+- `./nginx/ssl/privkey.pem`
+
+Create the directory and add your certs (e.g. from Let’s Encrypt):
 
 ```bash
-# 1. Prepare environment
+mkdir -p nginx/ssl
+# Copy or symlink fullchain.pem and privkey.pem into nginx/ssl/
+```
+
+**3. Environment**
+
+Copy and edit env, then set at least:
+
+- `FRONTEND_URL=https://replypilot.dk`
+- `VITE_API_BASE_URL=https://api.replypilot.dk` (used at frontend build time)
+- All other production vars from `.env.example` (DB, Redis, Stripe, Twilio, etc.)
+
+```bash
 cp .env.example .env
-# Configure all production credentials
+# Edit .env
+```
 
-# 2. Build and deploy
-docker compose -f docker-compose.yml up -d --build
+**4. Build and run**
 
-# 3. Run migrations
+```bash
+docker compose up -d --build
+```
+
+Start order: Postgres and Redis start → API and frontend build start → Nginx waits for API health and for the frontend build to finish, then starts. Frontend is built once into the `frontend_dist` volume with `VITE_API_BASE_URL` from `.env`.
+
+**5. Migrations**
+
+```bash
 docker compose exec api npm run db:migrate
+```
 
-# 4. Verify health
-curl https://api.replypilot.dk/health
+**6. Verify**
+
+- Frontend: https://replypilot.dk  
+- API health: `curl https://api.replypilot.dk/health`  
+- Checkout (from the site) should call https://api.replypilot.dk/create-checkout-session and redirect to Stripe.
+
+**Updating the frontend** after code changes:
+
+```bash
+docker compose build frontend-build
+docker compose run --rm frontend-build
+docker compose restart nginx
 ```
 
 ## API Documentation
@@ -230,11 +282,14 @@ Required for production:
 
 | Variable | Description |
 |----------|-------------|
+| `FRONTEND_URL` | Canonical frontend URL, e.g. `https://replypilot.dk` (Stripe redirects, CORS) |
+| `VITE_API_BASE_URL` | API URL used by the frontend at build time, e.g. `https://api.replypilot.dk` |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `REDIS_URL` | Redis connection string |
 | `SESSION_SECRET` | Session encryption key |
 | `STRIPE_SECRET_KEY` | Stripe secret key (live) |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook secret |
+| `STRIPE_PRICE_ID` | Stripe price ID for subscription |
 | `TWILIO_ACCOUNT_SID` | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token |
 | `GEMINI_API_KEY` | Google Gemini API key |

@@ -1,23 +1,15 @@
-# Frontend Build Dockerfile
-FROM node:20-alpine AS builder
+# Frontend build image: build runs at container start so VITE_* env from compose are used
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
 RUN npm ci
 
-# Copy source
 COPY . .
 
-# Build
-ARG VITE_API_BASE_URL
-ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-
-ARG VITE_API_KEY
-ENV VITE_API_KEY=$VITE_API_KEY
-
-RUN npm run build
-
-# Output volume
+# Build runs via docker-compose command so VITE_API_BASE_URL etc. come from env
+# Output is written to mounted volume /app/dist (frontend_dist)
 VOLUME ["/app/dist"]
+
+CMD ["npm", "run", "build"]

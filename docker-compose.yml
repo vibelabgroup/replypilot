@@ -57,7 +57,7 @@ services:
       TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       SENDGRID_API_KEY: ${SENDGRID_API_KEY}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      FRONTEND_URL: ${FRONTEND_URL:-https://replypilot.dk}
       SENTRY_DSN: ${SENTRY_DSN}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
@@ -119,7 +119,7 @@ services:
     deploy:
       replicas: 2
 
-  # Nginx Reverse Proxy
+  # Nginx Reverse Proxy (replypilot.dk = frontend, api.replypilot.dk = API)
   nginx:
     image: nginx:alpine
     ports:
@@ -130,7 +130,10 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - frontend_dist:/usr/share/nginx/html:ro
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+      frontend-build:
+        condition: service_completed_successfully
     networks:
       - replypilot-network
     restart: unless-stopped
