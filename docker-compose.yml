@@ -135,17 +135,17 @@ services:
 
   # Frontend Build (static files)
   frontend-build:
-    image: node:22-alpine
-    working_dir: /app
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
     volumes:
-      - .:/app
       - frontend_dist:/app/dist
     environment:
       # Default to same-origin API (replypilot.dk) – override if you later run
       # a separate API subdomain behind nginx.
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://replypilot.dk}
       VITE_API_KEY: ${GEMINI_API_KEY}
-    command: sh -c "npm install && npm run build"
+    command: npm run build
 
 volumes:
   postgres_data:
