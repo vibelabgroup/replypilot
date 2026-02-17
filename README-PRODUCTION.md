@@ -185,6 +185,122 @@ https://replypilot.dk/webhook
 
 If you later move to your own VPS and run the full Docker + nginx stack, you can use the `docker-compose.yml` and `nginx/nginx.conf` files in this repo. In that setup you may choose to run a separate API subdomain (e.g. `api.replypilot.dk`) and update `VITE_API_BASE_URL` accordingly.
 
+#### C. Hostinger VPS with Traefik (replypilot)
+
+Use this when running Replypilot as a **Docker service behind Traefik** on your Hostinger VPS (the same setup where `n8n`, `vibelab`, and `vl-affiliate` are running).
+
+**1. Plan the service**
+
+- **Domain**: e.g. `app.replypilot.dk`
+- **Internal port**: `3000` (what the Node app listens on inside the container)
+- **Project folder**: e.g. `/root/replypilot`
+
+The app **must** listen on `0.0.0.0:3000` inside the container.
+
+**2. Create project directory on the VPS**
+
+```bash
+mkdir -p /root/replypilot
+cd /root/replypilot
+
+# Option A: copy an existing build from local
+# scp -r ./dist ./server ./nginx root@<your-vps-ip>:/root/replypilot/
+
+# Option B: clone the repo on the VPS
+# git clone <repository-url> .
+```
+
+**3. `docker-compose.yml` for replypilot behind Traefik**
+
+In `/root/replypilot/docker-compose.yml`:
+
+```yaml
+services:
+  replypilot:
+    image: node:22-alpine
+    container_name: replypilot
+    working_dir: /app
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: >
+      sh -c "npm install &&
+             cd server && npm install &&
+             npm run build &&
+             node dist/index.mjs"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.replypilot.rule=Host(`app.replypilot.dk`)"
+      - "traefik.http.routers.replypilot.entrypoints=websecure"
+      - "traefik.http.routers.replypilot.tls.certresolver=letsencrypt"
+      - "traefik.http.services.replypilot.loadbalancer.server.port=3000"
+    networks:
+      - traefik-proxy
+
+networks:
+  traefik-proxy:
+    external: true
+```
+
+**Important:**
+
+- **No `ports:` section** – Traefik is the only thing exposing 80/443.
+- `Host(\`app.replypilot.dk\`)` must match your DNS hostname.
+- `server.port=3000` must match the internal port that the Node server binds to.
+
+**4. Start the service and attach to `traefik-proxy`**
+
+```bash
+cd /root/replypilot
+docker compose up -d
+docker ps
+
+docker network inspect traefik-proxy --format '{{json .Containers}}' \
+  | python3 -m json.tool | grep replypilot -n
+```
+
+You should see the `replypilot` container attached to `traefik-proxy`.
+
+**5. DNS (Hostinger)**
+
+Create an **A record** for your app domain, for example:
+
+- **Type**: `A`
+- **Name**: `app` (for `app.replypilot.dk`)
+- **Value**: `<your-vps-ip>`
+
+Wait a few minutes for DNS to propagate.
+
+**6. Verify HTTPS and routing via Traefik**
+
+```bash
+docker logs traefik --since=5m 2>&1 | tail -n 80
+```
+
+Open in a browser:
+
+- `https://app.replypilot.dk`
+
+If you see a Traefik 404, double-check:
+
+- The DNS hostname matches `Host(\`app.replypilot.dk\`)`
+- The `replypilot` container is running and attached to `traefik-proxy`
+- The app is listening on `0.0.0.0:3000` inside the container
+
+If you see SSL errors, wait a minute and re-check Traefik logs for Let’s Encrypt / ACME messages.
+
+**7. Quick health checks**
+
+```bash
+docker exec -it replypilot apk add --no-cache curl >/dev/null 2>&1 || true
+docker exec -it replypilot curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/health
+
+docker logs traefik --since=5m 2>&1 | tail -n 80
+```
+
+Follow this pattern for any future services on the same VPS: **one project folder, one `docker-compose.yml`, attached to `traefik-proxy`, with Traefik labels and no host ports**, plus a matching DNS record.
+
 ## API Documentation
 
 ### Authentication
