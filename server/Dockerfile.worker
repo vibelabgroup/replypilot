@@ -5,7 +5,8 @@ WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm ci --only=production
+# Use npm install instead of npm ci because we do not ship a package-lock.json
+RUN npm install --only=production
 
 # Copy application
 COPY . .
