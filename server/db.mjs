@@ -192,7 +192,7 @@ export async function upsertAiSettings(customerId, data) {
 }
 
 export async function getSettingsByCustomerId(customerId) {
-  const [companyRes, aiRes] = await Promise.all([
+  const [companyRes, aiRes, customerRes] = await Promise.all([
     pool.query(
       "SELECT * FROM company_settings WHERE customer_id = $1 LIMIT 1",
       [customerId]
@@ -200,11 +200,23 @@ export async function getSettingsByCustomerId(customerId) {
     pool.query("SELECT * FROM ai_settings WHERE customer_id = $1 LIMIT 1", [
       customerId,
     ]),
+    pool.query(
+      "SELECT sms_provider, fonecloud_sender_id FROM customers WHERE id = $1 LIMIT 1",
+      [customerId]
+    ),
   ]);
+
+  const customerRow = customerRes.rows[0] || null;
 
   return {
     company: companyRes.rows[0] || null,
     ai: aiRes.rows[0] || null,
+    sms: customerRow
+      ? {
+          provider: customerRow.sms_provider || 'twilio',
+          fonecloud_sender_id: customerRow.fonecloud_sender_id || null,
+        }
+      : null,
   };
 }
 

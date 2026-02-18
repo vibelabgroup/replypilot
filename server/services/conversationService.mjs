@@ -1,6 +1,6 @@
 import { query, withTransaction } from '../utils/db.mjs';
 import { logInfo, logError, logDebug } from '../utils/logger.mjs';
-import { sendSMS, queueSMS } from './twilioService.mjs';
+import { queueSms } from '../sms/gateway.mjs';
 import { generateResponse, queueAIResponse } from './aiService.mjs';
 
 // Get conversations for customer
@@ -174,11 +174,16 @@ export const sendMessage = async (customerId, conversationId, content, sender = 
 
   const message = messageResult.rows[0];
 
-  // Queue SMS send
-  await queueSMS(customerId, conv.lead_phone, content, {
-    conversationId,
-    messageId: message.id,
+  // Queue SMS send via gateway
+  await queueSms({
+    customerId,
+    to: conv.lead_phone,
+    body: content,
     from: conv.twilio_number,
+    options: {
+      conversationId,
+      messageId: message.id,
+    },
   });
 
   logInfo('Message sent', {

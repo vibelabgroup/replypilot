@@ -6,7 +6,7 @@ import cors from "cors";
 import Stripe from "stripe";
 import cookieParser from "cookie-parser";
 import { logInfo, logWarn, logError } from "./logger.mjs";
-import { handleIncomingSMS } from "./services/twilioService.mjs";
+import { handleIncomingMessage } from "./sms/gateway.mjs";
 import {
   initDb,
   pool,
@@ -227,7 +227,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
 // Twilio incoming SMS webhook (form-urlencoded)
 app.post("/webhook/twilio", express.urlencoded({ extended: true }), async (req, res) => {
   try {
-    await handleIncomingSMS(req.body);
+    await handleIncomingMessage("twilio", req.body);
     res.type("text/xml").send("<Response></Response>");
   } catch (err) {
     logError("Twilio webhook error", { error: err?.message });
@@ -393,7 +393,7 @@ app.get("/api/settings", requireAuth, async (req, res) => {
 app.put("/api/settings", requireAuth, async (req, res) => {
   try {
     const { customerId } = req.auth;
-    const { company = {}, ai = {} } = req.body || {};
+    const { company = {}, ai = {}, sms = {} } = req.body || {};
 
     // Basic length guards
     const clamp = (s, max) =>
@@ -424,7 +424,43 @@ app.put("/api/settings", requireAuth, async (req, res) => {
       upsertAiSettings(customerId, aiData),
     ]);
 
-    res.json({ company: companySettings, ai: aiSettings });
+    // Optional SMS provider settings
+    let smsSettings = null;
+    const smsProvider = sms.provider;
+    const fonecloudSenderId = sms.fonecloud_sender_id;
+
+    if (smsProvider || fonecloudSenderId) {
+      if (smsProvider && !["twilio", "fonecloud"].includes(smsProvider)) {
+        return res
+          .status(400)
+          .json({ error: "Invalid sms provider. Must be 'twilio' or 'fonecloud'." });
+      }
+
+      const result = await pool.query(
+        `
+          UPDATE customers
+          SET
+            sms_provider = COALESCE($1, sms_provider),
+            fonecloud_sender_id = COALESCE($2, fonecloud_sender_id),
+            updated_at = NOW()
+          WHERE id = $3
+          RETURNING sms_provider, fonecloud_sender_id;
+        `,
+        [smsProvider || null, fonecloudSenderId || null, customerId]
+      );
+
+      const row = result.rows[0];
+      smsSettings = {
+        provider: row.sms_provider,
+        fonecloud_sender_id: row.fonecloud_sender_id,
+      };
+    }
+
+    res.json({
+      company: companySettings,
+      ai: aiSettings,
+      sms: smsSettings,
+    });
   } catch (err) {
     logError("Error in PUT /api/settings", { error: err });
     res.status(500).json({ error: "Unable to save settings" });
@@ -499,6 +535,33 @@ app.get("/api/subscription-status", express.json(), async (req, res) => {
 // Basic health check
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
+});
+
+// Optional SMS health endpoint
+app.get("/api/health/sms", async (_req, res) => {
+  try {
+    const hasTwilioConfig =
+      !!process.env.TWILIO_ACCOUNT_SID &&
+      !!process.env.TWILIO_AUTH_TOKEN &&
+      !!process.env.TWILIO_MESSAGING_SERVICE_SID;
+
+    res.json({
+      status: "ok",
+      providers: {
+        twilio: {
+          configured: hasTwilioConfig,
+        },
+        fonecloud: {
+          configured:
+            !!process.env.FONECLOUD_API_BASE_URL &&
+            !!process.env.FONECLOUD_TOKEN,
+        },
+      },
+    });
+  } catch (err) {
+    logError("SMS health check failed", { error: err?.message });
+    res.status(500).json({ status: "error" });
+  }
 });
 
 // Static frontend (when frontend_dist is mounted at frontend-dist)

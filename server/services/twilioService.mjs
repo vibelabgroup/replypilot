@@ -2,6 +2,7 @@ import Twilio from 'twilio';
 import { query, withTransaction } from '../utils/db.mjs';
 import { logInfo, logError, logDebug } from '../utils/logger.mjs';
 import { enqueueJob } from '../utils/redis.mjs';
+import { applyInboundMessage } from '../sms/inbound.mjs';
 
 const twilioClient = Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 const MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID;
@@ -145,95 +146,15 @@ export const handleIncomingSMS = async (payload) => {
     const customerId = twilioNumber.customer_id;
     const twilioNumberId = twilioNumber.id;
 
-    // Find or create conversation
-    let conversationResult = await client.query(
-      `SELECT id FROM conversations
-       WHERE customer_id = $1 AND lead_phone = $2 AND status = 'active'
-       ORDER BY last_message_at DESC
-       LIMIT 1`,
-      [customerId, From]
-    );
-
-    let conversationId;
-
-    if (conversationResult.rowCount === 0) {
-      // Create new conversation
-      const newConversation = await client.query(
-        `INSERT INTO conversations (customer_id, twilio_number_id, lead_phone, lead_source)
-         VALUES ($1, $2, $3, 'sms')
-         RETURNING id`,
-        [customerId, twilioNumberId, From]
-      );
-      conversationId = newConversation.rows[0].id;
-
-      // Create lead
-      await client.query(
-        `INSERT INTO leads (customer_id, conversation_id, phone, source)
-         VALUES ($1, $2, $3, 'sms')`,
-        [customerId, conversationId, From]
-      );
-
-      // Queue notification for new lead
-      await queueNotification(customerId, 'new_lead', {
-        conversationId,
-        leadPhone: From,
-        message: Body,
-      });
-    } else {
-      conversationId = conversationResult.rows[0].id;
-    }
-
-    // Store incoming message
-    const messageResult = await client.query(
-      `INSERT INTO messages (conversation_id, direction, sender, content, twilio_message_sid)
-       VALUES ($1, 'inbound', 'lead', $2, $3)
-       RETURNING id`,
-      [conversationId, Body, MessageSid]
-    );
-    const messageId = messageResult.rows[0].id;
-
-    // Update conversation
-    await client.query(
-      `UPDATE conversations
-       SET last_message_at = NOW(),
-           message_count = message_count + 1,
-           updated_at = NOW()
-       WHERE id = $1`,
-      [conversationId]
-    );
-
-    // Queue AI response if auto-response is enabled
-    const aiSettings = await client.query(
-      `SELECT auto_response_enabled, auto_response_delay_seconds
-       FROM ai_settings
-       WHERE customer_id = $1`,
-      [customerId]
-    );
-
-    if (aiSettings.rowCount > 0 && aiSettings.rows[0].auto_response_enabled) {
-      await enqueueJob('ai_queue', {
-        type: 'ai_generate',
-        customerId,
-        conversationId,
-        messageId,
-        leadMessage: Body,
-        delayMs: aiSettings.rows[0].auto_response_delay_seconds * 1000,
-      });
-    }
-
-    // Queue notification
-    await queueNotification(customerId, 'new_message', {
-      conversationId,
-      messageId,
-      leadPhone: From,
-      message: Body,
+    // Delegate to shared inbound handler
+    return await applyInboundMessage(client, {
+      customerId,
+      from: From,
+      to: To,
+      body: Body,
+      providerMessageId: MessageSid,
+      twilioNumberId,
     });
-
-    return {
-      success: true,
-      conversationId,
-      messageId,
-    };
   });
 };
 

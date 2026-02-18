@@ -1,7 +1,7 @@
 import sgMail from '@sendgrid/mail';
 import { query } from '../utils/db.mjs';
 import { logInfo, logError, logDebug } from '../utils/logger.mjs';
-import { sendSMS } from './twilioService.mjs';
+import { sendSms } from '../sms/gateway.mjs';
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
@@ -83,7 +83,7 @@ export const sendNotification = async (customerId, type, data) => {
 
   // Send SMS notification
   if (prefs.sms_enabled && prefs.sms_phone && shouldSendSMS(type, prefs)) {
-    const smsResult = await sendSMSNotification(type, data, prefs);
+    const smsResult = await sendSMSNotification(customerId, type, data, prefs);
     results.push({ channel: 'sms', ...smsResult });
   }
 
@@ -189,7 +189,7 @@ const sendEmailNotification = async (type, data, prefs) => {
 };
 
 // Send SMS notification by type
-const sendSMSNotification = async (type, data, prefs) => {
+const sendSMSNotification = async (customerId, type, data, prefs) => {
   const templates = {
     new_lead: () => `Ny kundeemne: ${data.leadPhone}. Se Replypilot dashboard for besked.`,
     new_message: () => `Ny besked fra ${data.leadPhone}: ${data.message.substring(0, 100)}${data.message.length > 100 ? '...' : ''}`,
@@ -201,7 +201,11 @@ const sendSMSNotification = async (type, data, prefs) => {
   }
 
   const message = template();
-  return await sendSMS(prefs.sms_phone, message);
+  return await sendSms({
+    customerId,
+    to: prefs.sms_phone,
+    body: message,
+  });
 };
 
 // Send digest notifications

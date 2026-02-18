@@ -9,6 +9,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     const [selectedLead, setSelectedLead] = useState<any>(null);
     const [companySettings, setCompanySettings] = useState<any | null>(null);
     const [aiSettings, setAiSettings] = useState<any | null>(null);
+    const [smsSettings, setSmsSettings] = useState<any | null>(null);
+    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    const [smsProvider, setSmsProvider] = useState<'twilio' | 'fonecloud'>('twilio');
+    const [fonecloudSenderId, setFonecloudSenderId] = useState<string>('');
 
     useEffect(() => {
         const fetchSettings = async () => {
@@ -22,6 +26,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                     const data = await res.json();
                     setCompanySettings(data.company);
                     setAiSettings(data.ai);
+                    setSmsSettings(data.sms);
                 }
             } catch (err) {
                 console.warn('Kunne ikke hente indstillinger', err);
@@ -29,6 +34,43 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         };
         fetchSettings();
     }, []);
+
+    const openSettingsModal = () => {
+        setSmsProvider((smsSettings?.provider as 'twilio' | 'fonecloud') || 'twilio');
+        setFonecloudSenderId(smsSettings?.fonecloud_sender_id || '');
+        setIsSettingsModalOpen(true);
+    };
+
+    const saveSmsSettings = async () => {
+        try {
+            const apiBase =
+                import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+            const res = await fetch(`${apiBase}/api/settings`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    company: companySettings || {},
+                    ai: aiSettings || {},
+                    sms: {
+                        provider: smsProvider,
+                        fonecloud_sender_id: fonecloudSenderId || null,
+                    },
+                }),
+            });
+
+            if (!res.ok) {
+                console.error('Kunne ikke gemme SMS-indstillinger');
+                return;
+            }
+
+            const data = await res.json();
+            setSmsSettings(data.sms);
+            setIsSettingsModalOpen(false);
+        } catch (err) {
+            console.error('Fejl ved gem af SMS-indstillinger', err);
+        }
+    };
 
     const leads = [
         { name: "Morten Jensen", time: "10:42", topic: "Nyt tag", msg: "Spørger til pris på tagrenovering af 140m2 hus...", email: "morten@mail.dk", phone: "20 30 40 50", address: "Hovedgaden 12, 4000 Roskilde" },
@@ -167,7 +209,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                     </div>
                                 </div>
 
-                                <button className="w-full mt-6 py-3 bg-white/10 hover:bg-white/20 rounded-xl font-medium transition-colors text-sm backdrop-blur-sm border border-white/10 flex items-center justify-center gap-2">
+                                <button
+                                    className="w-full mt-6 py-3 bg-white/10 hover:bg-white/20 rounded-xl font-medium transition-colors text-sm backdrop-blur-sm border border-white/10 flex items-center justify-center gap-2"
+                                    onClick={openSettingsModal}
+                                >
                                     <Settings className="w-4 h-4" /> Konfigurer
                                 </button>
                             </div>
@@ -187,7 +232,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                </div>
            </div>
 
-           {/* Lead Detail Modal */}
+          {/* Lead Detail Modal */}
            {selectedLead && (
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                    <div 
@@ -243,6 +288,80 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                     <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
                                     <span className="font-medium">{selectedLead.address}</span>
                                 </div>
+                           </div>
+                       </div>
+                   </div>
+               </div>
+           )}
+           )}
+
+           {/* SMS Provider Settings Modal */}
+           {isSettingsModalOpen && (
+               <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                   <div
+                       className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+                       onClick={() => setIsSettingsModalOpen(false)}
+                   ></div>
+                   <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative z-10 overflow-hidden">
+                       <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+                           <h3 className="text-base font-semibold text-slate-900">SMS-udbyder</h3>
+                           <button
+                               onClick={() => setIsSettingsModalOpen(false)}
+                               className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+                           >
+                               <X className="w-4 h-4" />
+                           </button>
+                       </div>
+                       <div className="p-5 space-y-4">
+                           <div className="space-y-1">
+                               <label className="text-sm font-medium text-slate-700">
+                                   Udbyder
+                               </label>
+                               <select
+                                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 bg-white"
+                                   value={smsProvider}
+                                   onChange={(e) =>
+                                       setSmsProvider(e.target.value === 'fonecloud' ? 'fonecloud' : 'twilio')
+                                   }
+                               >
+                                   <option value="twilio">Twilio</option>
+                                   <option value="fonecloud">Fonecloud</option>
+                               </select>
+                           </div>
+
+                           {smsProvider === 'fonecloud' && (
+                               <div className="space-y-1">
+                                   <label className="text-sm font-medium text-slate-700">
+                                       Fonecloud Sender ID
+                                   </label>
+                                   <input
+                                       type="text"
+                                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
+                                       value={fonecloudSenderId}
+                                       onChange={(e) => setFonecloudSenderId(e.target.value)}
+                                       placeholder="Fx SMS eller firmanavn"
+                                   />
+                               </div>
+                           )}
+
+                           <p className="text-xs text-slate-500">
+                               Nye SMS'er sendes via den valgte udbyder. Eksisterende samtaler og beskeder
+                               påvirkes ikke.
+                           </p>
+
+                           <div className="flex justify-end gap-2 pt-2">
+                               <button
+                                   className="px-3 py-2 text-xs font-medium text-slate-500 hover:text-slate-700"
+                                   onClick={() => setIsSettingsModalOpen(false)}
+                               >
+                                   Annuller
+                               </button>
+                               <button
+                                   className="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-900 text-white hover:bg-slate-800"
+                                   onClick={saveSmsSettings}
+                               >
+                                   Gem indstillinger
+                               </button>
                            </div>
                        </div>
                    </div>

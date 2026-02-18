@@ -296,16 +296,16 @@ export const processAIGenerationJob = async (job) => {
     );
 
     if (conversation.rowCount > 0) {
-      const { sendSMS, queueSMS } = await import('./twilioService.mjs');
-      await queueSMS(
+      const { queueSms } = await import('../sms/gateway.mjs');
+      await queueSms({
         customerId,
-        conversation.rows[0].lead_phone,
-        result.response,
-        {
+        to: conversation.rows[0].lead_phone,
+        body: result.response,
+        options: {
           conversationId,
           messageId: messageResult.rows[0].id,
-        }
-      );
+        },
+      });
     }
   }
 

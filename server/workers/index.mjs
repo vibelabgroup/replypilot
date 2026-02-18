@@ -1,7 +1,7 @@
 import { redis, dequeueJob, publish } from '../utils/redis.mjs';
 import { logInfo, logError, logDebug } from '../utils/logger.mjs';
 import { processAIGenerationJob } from '../services/aiService.mjs';
-import { sendSMS } from '../services/twilioService.mjs';
+import { sendSms } from '../sms/gateway.mjs';
 import { processNotificationJob } from '../services/notificationService.mjs';
 
 // Worker configuration
@@ -16,7 +16,13 @@ const WORKER_CONFIG = {
     concurrency: 10,
     handler: async (job) => {
       const { customerId, to, body, options } = job;
-      return await sendSMS(to, body, options?.from, options);
+      return await sendSms({
+        customerId,
+        to,
+        body,
+        from: options?.from,
+        options,
+      });
     },
   },
   notifications: {
