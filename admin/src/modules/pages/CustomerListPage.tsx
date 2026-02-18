@@ -31,7 +31,8 @@ export const CustomerListPage: React.FC = () => {
   const [rows, setRows] = useState<Customer[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
 
-  const apiBase = import.meta.env.VITE_ADMIN_API_BASE_URL || '';
+  const apiBase =
+    import.meta.env.VITE_ADMIN_API_BASE_URL || 'https://admin-api.replypilot.dk';
 
   const load = async (page = 1) => {
     setLoading(true);

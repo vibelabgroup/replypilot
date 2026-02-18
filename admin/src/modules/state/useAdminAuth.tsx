@@ -24,7 +24,8 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setInitialised(true);
   }, []);
 
-  const apiBase = import.meta.env.VITE_ADMIN_API_BASE_URL || '';
+  const apiBase =
+    import.meta.env.VITE_ADMIN_API_BASE_URL || 'https://admin-api.replypilot.dk';
 
   const login = async (email: string, password: string) => {
     const res = await fetch(`${apiBase}/api/admin/auth/login`, {

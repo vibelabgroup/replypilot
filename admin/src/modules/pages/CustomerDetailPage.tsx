@@ -35,7 +35,8 @@ export const CustomerDetailPage: React.FC = () => {
   const [testBody, setTestBody] = useState('');
   const [testing, setTesting] = useState(false);
 
-  const apiBase = import.meta.env.VITE_ADMIN_API_BASE_URL || '';
+  const apiBase =
+    import.meta.env.VITE_ADMIN_API_BASE_URL || 'https://admin-api.replypilot.dk';
 
   const load = async () => {
     if (!id) return;

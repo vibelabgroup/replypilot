@@ -16,7 +16,8 @@ export const SystemStatusPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const apiBase = import.meta.env.VITE_ADMIN_API_BASE_URL || '';
+  const apiBase =
+    import.meta.env.VITE_ADMIN_API_BASE_URL || 'https://admin-api.replypilot.dk';
 
   const load = async () => {
     setLoading(true);
