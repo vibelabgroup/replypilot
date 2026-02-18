@@ -76,6 +76,43 @@ services:
       - "traefik.http.routers.replypilot.tls.certresolver=letsencrypt"
       - "traefik.http.services.replypilot.loadbalancer.server.port=3000"
 
+  # Admin Backend API (separate service and subdomain)
+  admin-api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.admin
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      ADMIN_API_PORT: 3100
+      DATABASE_URL: postgresql://replypilot:${POSTGRES_PASSWORD:-changeme}@postgres:5432/replypilot?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      SENTRY_DSN: ${SENTRY_DSN}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ADMIN_FRONTEND_URL: ${ADMIN_FRONTEND_URL:-https://admin.replypilot.dk}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - replypilot-network
+      - traefik-proxy
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.replypilot-admin-api.rule=Host(`admin-api.replypilot.dk`)"
+      - "traefik.http.routers.replypilot-admin-api.entrypoints=websecure"
+      - "traefik.http.routers.replypilot-admin-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.replypilot-admin-api.loadbalancer.server.port=3100"
+
   # Background Workers
   worker-sms:
     build:
@@ -135,6 +172,23 @@ services:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://replypilot.dk}
       VITE_API_KEY: ${GEMINI_API_KEY}
     command: npm run build
+
+  # Admin Frontend (separate dashboard for admins)
+  admin-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin-frontend
+    environment:
+      VITE_ADMIN_API_BASE_URL: ${VITE_ADMIN_API_BASE_URL:-https://admin-api.replypilot.dk}
+    networks:
+      - traefik-proxy
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.replypilot-admin-frontend.rule=Host(`admin.replypilot.dk`)"
+      - "traefik.http.routers.replypilot-admin-frontend.entrypoints=websecure"
+      - "traefik.http.routers.replypilot-admin-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.replypilot-admin-frontend.loadbalancer.server.port=80"
 
 volumes:
   postgres_data:

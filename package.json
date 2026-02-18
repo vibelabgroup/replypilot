@@ -8,6 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server/index.mjs",
+    "admin:dev": "cd admin && vite",
+    "admin:build": "cd admin && vite build",
     "test": "node --test"
   },
   "dependencies": {
