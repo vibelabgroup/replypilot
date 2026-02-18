@@ -7,9 +7,8 @@ RUN npm install
 
 COPY . .
 
-WORKDIR /app/admin
-RUN npm install
-RUN npm run build
+# Build the admin frontend via the root script, which runs Vite in /admin
+RUN npm run admin:build
 
 FROM nginx:alpine
 
