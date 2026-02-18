@@ -434,10 +434,16 @@ app.put("/api/settings", requireAuth, async (req, res) => {
 // JSON body only for normal API routes
 app.post("/create-checkout-session", async (req, res) => {
   try {
-    const { name, email, phone } = req.body;
+    const { name, email, phone, acceptedTerms, acceptedDpa } = req.body;
 
     if (!email) {
       return res.status(400).json({ error: "Email is required" });
+    }
+
+    if (!acceptedTerms || !acceptedDpa) {
+      return res.status(400).json({
+        error: "Acceptance of terms and data processing agreement (DPA) is required",
+      });
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -452,6 +458,8 @@ app.post("/create-checkout-session", async (req, res) => {
       metadata: {
         customer_name: name || "",
         customer_phone: phone || "",
+        accepted_terms: "true",
+        accepted_dpa: "true",
       },
       success_url: `${frontendUrl}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${frontendUrl}?checkout=cancel`,
@@ -459,7 +467,10 @@ app.post("/create-checkout-session", async (req, res) => {
 
     return res.json({ url: session.url });
   } catch (err) {
-    logError("Error creating checkout session", { error: err });
+    logError("Error creating checkout session", {
+      error: err?.message ?? err,
+      stack: err?.stack,
+    });
     return res.status(500).json({ error: "Unable to create checkout session" });
   }
 });

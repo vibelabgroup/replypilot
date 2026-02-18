@@ -47,6 +47,8 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onPaymentComplete
                     name: formData.name,
                     email: formData.email,
                     phone: formData.phone,
+                    acceptedTerms,
+                    acceptedDpa,
                 }),
             });
 
