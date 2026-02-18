@@ -141,7 +141,7 @@ export const handleIncomingSMS = async (payload) => {
       throw new Error('Phone number not registered');
     }
 
-    const twilioNumber = twilioNumbersResult.rows[0];
+    const twilioNumber = twilioNumberResult.rows[0];
     const customerId = twilioNumber.customer_id;
     const twilioNumberId = twilioNumber.id;
 

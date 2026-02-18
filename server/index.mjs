@@ -1,8 +1,12 @@
 import express from "express";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
 import cors from "cors";
 import Stripe from "stripe";
 import cookieParser from "cookie-parser";
 import { logInfo, logWarn, logError } from "./logger.mjs";
+import { handleIncomingSMS } from "./services/twilioService.mjs";
 import {
   initDb,
   pool,
@@ -24,6 +28,7 @@ import {
   generateSessionToken,
 } from "./auth.mjs";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const port = process.env.PORT || 4242;
 
@@ -216,6 +221,17 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
     logError("Error handling webhook event", { eventId: event.id, error: err });
     // Let Stripe retry on error
     res.status(500).send("Webhook handler error");
+  }
+});
+
+// Twilio incoming SMS webhook (form-urlencoded)
+app.post("/webhook/twilio", express.urlencoded({ extended: true }), async (req, res) => {
+  try {
+    await handleIncomingSMS(req.body);
+    res.type("text/xml").send("<Response></Response>");
+  } catch (err) {
+    logError("Twilio webhook error", { error: err?.message });
+    res.status(500).type("text/xml").send("<Response></Response>");
   }
 });
 
@@ -473,6 +489,15 @@ app.get("/api/subscription-status", express.json(), async (req, res) => {
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
+
+// Static frontend (when frontend_dist is mounted at frontend-dist)
+const frontendDist = path.join(__dirname, "frontend-dist");
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(frontendDist, "index.html"));
+  });
+}
 
 initDb()
   .then(() => initAuthDb())

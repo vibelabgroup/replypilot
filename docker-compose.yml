@@ -31,7 +31,7 @@ services:
     networks:
       - replypilot-network
 
-  # Backend API
+  # Backend API (Traefik routes here: single service for replypilot.dk)
   api:
     build:
       context: ./server
@@ -54,16 +54,27 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-https://replypilot.dk}
       SENTRY_DSN: ${SENTRY_DSN}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - frontend_dist:/app/frontend-dist:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      frontend-build:
+        condition: service_completed_successfully
     networks:
       - replypilot-network
+      - traefik-proxy
     restart: unless-stopped
     deploy:
       replicas: 2
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.replypilot.rule=Host(`replypilot.dk`)"
+      - "traefik.http.routers.replypilot.entrypoints=websecure"
+      - "traefik.http.routers.replypilot.tls.certresolver=letsencrypt"
+      - "traefik.http.services.replypilot.loadbalancer.server.port=3000"
 
   # Background Workers
   worker-sms:
@@ -111,29 +122,7 @@ services:
     deploy:
       replicas: 2
 
-  # Nginx Reverse Proxy (single-domain: replypilot.dk)
-  nginx:
-    image: nginx:alpine
-    volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - frontend_dist:/usr/share/nginx/html:ro
-    depends_on:
-      api:
-        condition: service_healthy
-      frontend-build:
-        condition: service_completed_successfully
-    networks:
-      - replypilot-network
-      - traefik-proxy
-    restart: unless-stopped
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.replypilot.rule=Host(`replypilot.dk`)"
-      - "traefik.http.routers.replypilot.entrypoints=websecure"
-      - "traefik.http.routers.replypilot.tls.certresolver=letsencrypt"
-      - "traefik.http.services.replypilot.loadbalancer.server.port=80"
-
-  # Frontend Build (static files)
+  # Frontend Build (static files; output in frontend_dist, consumed by api)
   frontend-build:
     build:
       context: .
