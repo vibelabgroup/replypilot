@@ -24,6 +24,9 @@ export async function initDb() {
       name TEXT,
       phone TEXT,
       stripe_customer_id TEXT UNIQUE,
+      -- Default SMS provider configuration (multi-provider support)
+      sms_provider VARCHAR(50) NOT NULL DEFAULT 'twilio',
+      fonecloud_sender_id VARCHAR(50),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -115,6 +118,53 @@ export async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  // Ensure SMS multi-provider columns exist on existing databases as well.
+  // This mirrors the logic in migrations/002_sms_multi_provider.sql but runs
+  // automatically at startup so the code works without manual migration steps.
+  await pool.query(`
+    DO $$
+    BEGIN
+      -- customers.sms_provider
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'customers'
+          AND column_name = 'sms_provider'
+      ) THEN
+        ALTER TABLE customers
+        ADD COLUMN sms_provider VARCHAR(50);
+
+        UPDATE customers
+        SET sms_provider = 'twilio'
+        WHERE sms_provider IS NULL;
+
+        ALTER TABLE customers
+        ALTER COLUMN sms_provider SET NOT NULL;
+
+        ALTER TABLE customers
+        ADD CONSTRAINT sms_provider_enum
+        CHECK (sms_provider IN ('twilio', 'fonecloud'));
+      END IF;
+
+      -- customers.fonecloud_sender_id (optional, nullable)
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'customers'
+          AND column_name = 'fonecloud_sender_id'
+      ) THEN
+        ALTER TABLE customers
+        ADD COLUMN fonecloud_sender_id VARCHAR(50);
+      END IF;
+    END
+    $$;
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_customers_sms_provider
+      ON customers(sms_provider);
   `);
 }
 
