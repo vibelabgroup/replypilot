@@ -301,6 +301,42 @@ docker logs traefik --since=5m 2>&1 | tail -n 80
 
 Follow this pattern for any future services on the same VPS: **one project folder, one `docker-compose.yml`, attached to `traefik-proxy`, with Traefik labels and no host ports**, plus a matching DNS record.
 
+### Admin Deployment (admin.replypilot.dk / admin-api.replypilot.dk)
+
+For the admin dashboard and admin API, the recommended production setup is:
+
+- **Admin frontend**: `https://admin.replypilot.dk`
+- **Admin API**: `https://admin-api.replypilot.dk`
+
+When using the provided `docker-compose.yml` on your VPS:
+
+- The `admin-api` service is exposed on the `admin-api.replypilot.dk` subdomain via Traefik.
+- The `admin-frontend` service serves the admin SPA on `admin.replypilot.dk` and builds it with the correct admin API base URL.
+
+Make sure the following environment variables are set on the VPS (for example in `/root/replypilot/.env` alongside `docker-compose.yml`):
+
+```bash
+ADMIN_FRONTEND_URL=https://admin.replypilot.dk
+VITE_ADMIN_API_BASE_URL=https://admin-api.replypilot.dk
+```
+
+These map to the Docker services as follows:
+
+- `ADMIN_FRONTEND_URL` → used by `admin-api` for CORS (`origin: https://admin.replypilot.dk`).
+- `VITE_ADMIN_API_BASE_URL` → used by `admin-frontend` at build time so that all admin API calls go to `https://admin-api.replypilot.dk/api/admin/...`.
+
+After changing these variables, rebuild the admin services on the VPS:
+
+```bash
+cd /root/replypilot
+docker compose up -d --build admin-api admin-frontend
+```
+
+Then verify in your browser:
+
+- `https://admin-api.replypilot.dk/api/admin/health` returns JSON with `status: ok` or `degraded`.
+- On `https://admin.replypilot.dk/login`, the Network tab shows login requests going to `https://admin-api.replypilot.dk/api/admin/auth/login` (not `https://admin.replypilot.dk/api/admin/...`) and responses are JSON from the Express app.
+
 ## API Documentation
 
 ### Authentication
