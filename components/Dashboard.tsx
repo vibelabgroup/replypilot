@@ -291,9 +291,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                            </div>
                        </div>
                    </div>
-               </div>
-           )}
-           )}
+              </div>
+          )}
 
            {/* SMS Provider Settings Modal */}
            {isSettingsModalOpen && (
