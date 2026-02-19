@@ -69,7 +69,7 @@ export const CustomerListPage: React.FC = () => {
           </p>
         </div>
       </div>
-      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
             <tr>
