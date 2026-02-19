@@ -550,6 +550,48 @@ app.get(
   })
 );
 
+// Global default SMS provider for new customers
+app.get(
+  '/api/admin/sms-default',
+  requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const result = await query(
+      `SELECT value FROM system_settings WHERE key = 'default_sms_provider' LIMIT 1`,
+      []
+    );
+    const raw = result.rows[0]?.value || 'twilio';
+    const provider = raw === 'fonecloud' ? 'fonecloud' : 'twilio';
+    res.json({ provider });
+  })
+);
+
+app.put(
+  '/api/admin/sms-default',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { provider } = req.body || {};
+
+    if (!provider || !['twilio', 'fonecloud'].includes(provider)) {
+      return res
+        .status(400)
+        .json({ error: "Invalid provider. Must be 'twilio' or 'fonecloud'." });
+    }
+
+    await query(
+      `
+        INSERT INTO system_settings (key, value)
+        VALUES ('default_sms_provider', $1)
+        ON CONFLICT (key) DO UPDATE
+        SET value = EXCLUDED.value,
+            updated_at = NOW()
+      `,
+      [provider]
+    );
+
+    res.json({ provider });
+  })
+);
+
 // 404 handler for admin routes
 app.use('/api/admin', (req, res) => {
   res.status(404).json({ error: 'Admin route not found' });

@@ -99,17 +99,25 @@ export const createCheckoutSession = async ({ name, email, phone, priceId }) => 
     // so we keep the data even if they never complete payment.
     try {
       await withTransaction(async (client) => {
+        // Resolve global default SMS provider for new customers
+        const defaultProviderResult = await client.query(
+          `SELECT value FROM system_settings WHERE key = 'default_sms_provider' LIMIT 1`,
+          []
+        );
+        const rawProvider = defaultProviderResult.rows[0]?.value || 'twilio';
+        const smsProvider = rawProvider === 'fonecloud' ? 'fonecloud' : 'twilio';
+
         // Upsert customer by email
         const customerResult = await client.query(
-          `INSERT INTO customers (stripe_customer_id, name, email, phone, status, subscription_status)
-           VALUES ($1, $2, $3, $4, 'trial', 'incomplete')
+          `INSERT INTO customers (stripe_customer_id, name, email, phone, status, subscription_status, sms_provider)
+           VALUES ($1, $2, $3, $4, 'trial', 'incomplete', $5)
            ON CONFLICT (email) DO UPDATE
            SET name = EXCLUDED.name,
                phone = EXCLUDED.phone,
                stripe_customer_id = COALESCE(customers.stripe_customer_id, EXCLUDED.stripe_customer_id),
                updated_at = NOW()
            RETURNING id`,
-          [customer.id, name, email, phone]
+          [customer.id, name, email, phone, smsProvider]
         );
 
         const customerUuid = customerResult.rows[0].id;
@@ -244,12 +252,20 @@ const handleCheckoutCompleted = async (session) => {
     );
 
     if (existingCustomer.rowCount === 0) {
+      // Resolve global default SMS provider for new customers
+      const defaultProviderResult = await client.query(
+        `SELECT value FROM system_settings WHERE key = 'default_sms_provider' LIMIT 1`,
+        []
+      );
+      const rawProvider = defaultProviderResult.rows[0]?.value || 'twilio';
+      const smsProvider = rawProvider === 'fonecloud' ? 'fonecloud' : 'twilio';
+
       // Create new customer
       const newCustomer = await client.query(
-        `INSERT INTO customers (stripe_customer_id, email, name, status, subscription_status)
-         VALUES ($1, $2, $3, 'active', 'trialing')
+        `INSERT INTO customers (stripe_customer_id, email, name, status, subscription_status, sms_provider)
+         VALUES ($1, $2, $3, 'active', 'trialing', $4)
          RETURNING id`,
-        [customerId, email, name]
+        [customerId, email, name, smsProvider]
       );
 
       const customerUuid = newCustomer.rows[0].id;

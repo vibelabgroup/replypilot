@@ -53,11 +53,20 @@ export const signup = async (data, ipAddress, userAgent) => {
     // NOTE: We only insert core fields here and rely on database defaults
     // for status/subscription_status so this works across different schema
     // versions (older and migrated).
+
+    // Resolve global default SMS provider for new customers
+    const defaultProviderResult = await query(
+      `SELECT value FROM system_settings WHERE key = 'default_sms_provider' LIMIT 1`,
+      []
+    );
+    const rawProvider = defaultProviderResult.rows[0]?.value || 'twilio';
+    const smsProvider = rawProvider === 'fonecloud' ? 'fonecloud' : 'twilio';
+
     const newCustomer = await query(
-      `INSERT INTO customers (email, name, phone)
-       VALUES ($1, $2, $3)
+      `INSERT INTO customers (email, name, phone, sms_provider)
+       VALUES ($1, $2, $3, $4)
        RETURNING id`,
-      [email, name, phone]
+      [email, name, phone, smsProvider]
     );
     customerId = newCustomer.rows[0].id;
 
