@@ -11,6 +11,7 @@ type Customer = {
   sms_provider: string | null;
   fonecloud_sender_id: string | null;
   twilio_phone_number: string | null;
+  fonecloud_phone_number: string | null;
   created_at: string;
 };
 
@@ -116,6 +117,11 @@ export const CustomerListPage: React.FC = () => {
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-700">
                     {c.sms_provider || 'twilio'}
+                    {c.sms_provider === 'fonecloud' && c.fonecloud_phone_number && (
+                      <span className="block text-[11px] text-slate-500">
+                        Fonecloud: {c.fonecloud_phone_number}
+                      </span>
+                    )}
                     {c.fonecloud_sender_id && (
                       <span className="block text-[11px] text-slate-500">
                         Fonecloud ID: {c.fonecloud_sender_id}

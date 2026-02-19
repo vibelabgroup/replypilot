@@ -11,7 +11,8 @@
     "worker:all": "node workers/index.mjs all",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "migrate": "node migrate.mjs"
   },
   "dependencies": {
     "express": "^4.21.2",

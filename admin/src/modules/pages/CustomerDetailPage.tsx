@@ -30,6 +30,8 @@ type Customer = {
   company_notes?: string | null;
   // Telephony
   twilio_phone_number?: string | null;
+  fonecloud_number_id?: string | null;
+  fonecloud_phone_number?: string | null;
   // AI configuration (joined from ai_settings)
   ai_agent_name?: string | null;
   ai_tone?: string | null;
@@ -68,6 +70,8 @@ export const CustomerDetailPage: React.FC = () => {
   const [provider, setProvider] = useState<string>('twilio');
   const [fonecloudId, setFonecloudId] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [allocating, setAllocating] = useState(false);
+  const [releasing, setReleasing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [testNumber, setTestNumber] = useState('');
   const [testBody, setTestBody] = useState('');
@@ -168,6 +172,52 @@ export const CustomerDetailPage: React.FC = () => {
     }
   };
 
+  const handleAllocateFonecloud = async () => {
+    if (!id) return;
+    setAllocating(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/admin/customers/${id}/allocate-fonecloud-number`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || 'Kunne ikke tildele nummer');
+      }
+      setMessage('Fonecloud-nummer tildelt');
+      await load();
+    } catch (err: any) {
+      setError(err?.message || 'Uventet fejl');
+    } finally {
+      setAllocating(false);
+    }
+  };
+
+  const handleReleaseFonecloud = async () => {
+    if (!id || !data?.customer.fonecloud_number_id) return;
+    setReleasing(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await fetch(
+        `${apiBase}/api/admin/fonecloud-numbers/${data.customer.fonecloud_number_id}/release`,
+        { method: 'PATCH', credentials: 'include' }
+      );
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || 'Kunne ikke frigive nummer');
+      }
+      setMessage('Fonecloud-nummer frigivet');
+      await load();
+    } catch (err: any) {
+      setError(err?.message || 'Uventet fejl');
+    } finally {
+      setReleasing(false);
+    }
+  };
+
   const handleTestSms = async () => {
     if (!id) return;
     setTesting(true);
@@ -246,10 +296,26 @@ export const CustomerDetailPage: React.FC = () => {
           <div className="space-y-3">
             {customer.twilio_phone_number && (
               <div>
-                <p className="text-xs text-slate-600 mb-1">Aktivt SMS-nummer</p>
+                <p className="text-xs text-slate-600 mb-1">Aktivt SMS-nummer (Twilio)</p>
                 <p className="text-xs font-mono text-slate-800">
                   {customer.twilio_phone_number}
                 </p>
+              </div>
+            )}
+            {provider === 'fonecloud' && customer.fonecloud_phone_number && (
+              <div>
+                <p className="text-xs text-slate-600 mb-1">Fonecloud-nummer</p>
+                <p className="text-xs font-mono text-slate-800">
+                  {customer.fonecloud_phone_number}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleReleaseFonecloud}
+                  disabled={releasing}
+                  className="mt-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {releasing ? 'Frigiver…' : 'Frigiv nummer'}
+                </button>
               </div>
             )}
             <div>
@@ -266,18 +332,30 @@ export const CustomerDetailPage: React.FC = () => {
               </select>
             </div>
             {provider === 'fonecloud' && (
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Fonecloud sender ID
-                </label>
-                <input
-                  type="text"
-                  value={fonecloudId}
-                  onChange={(e) => setFonecloudId(e.target.value)}
-                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
-                  placeholder="fx. FC-1234"
-                />
-              </div>
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Fonecloud sender ID (fallback)
+                  </label>
+                  <input
+                    type="text"
+                    value={fonecloudId}
+                    onChange={(e) => setFonecloudId(e.target.value)}
+                    className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                    placeholder="fx. FC-1234"
+                  />
+                </div>
+                {!customer.fonecloud_phone_number && (
+                  <button
+                    type="button"
+                    onClick={handleAllocateFonecloud}
+                    disabled={allocating}
+                    className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    {allocating ? 'Tildeler…' : 'Tildel nummer fra pulje'}
+                  </button>
+                )}
+              </>
             )}
             <button
               onClick={handleSaveSms}

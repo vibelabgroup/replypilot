@@ -28,10 +28,13 @@ export const getConversations = async (customerId, options = {}) => {
   const result = await query(
     `SELECT c.*, 
             tn.phone_number as twilio_number,
+            fn.phone_number as fonecloud_number,
+            COALESCE(tn.phone_number, fn.phone_number) as reply_number,
             (SELECT content FROM messages WHERE conversation_id = c.id AND direction = 'inbound' ORDER BY created_at DESC LIMIT 1) as last_inbound_message,
             (SELECT content FROM messages WHERE conversation_id = c.id AND sender = 'ai' ORDER BY created_at DESC LIMIT 1) as last_ai_response
      FROM conversations c
      LEFT JOIN twilio_numbers tn ON c.twilio_number_id = tn.id
+     LEFT JOIN fonecloud_numbers fn ON c.fonecloud_number_id = fn.id
      ${whereClause}
      ORDER BY c.last_message_at DESC NULLS LAST
      LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`,
@@ -55,9 +58,11 @@ export const getConversations = async (customerId, options = {}) => {
 // Get single conversation with messages
 export const getConversation = async (customerId, conversationId) => {
   const conversationResult = await query(
-    `SELECT c.*, tn.phone_number as twilio_number
+    `SELECT c.*, tn.phone_number as twilio_number, fn.phone_number as fonecloud_number,
+            COALESCE(tn.phone_number, fn.phone_number) as reply_number
      FROM conversations c
      LEFT JOIN twilio_numbers tn ON c.twilio_number_id = tn.id
+     LEFT JOIN fonecloud_numbers fn ON c.fonecloud_number_id = fn.id
      WHERE c.id = $1 AND c.customer_id = $2`,
     [conversationId, customerId]
   );
@@ -86,28 +91,43 @@ export const createConversation = async (customerId, data) => {
   const { leadName, leadPhone, leadEmail } = data;
 
   return await withTransaction(async (client) => {
-    // Get active Twilio number
-    const twilioResult = await client.query(
-      `SELECT id, phone_number FROM twilio_numbers
-       WHERE customer_id = $1 AND is_active = true
-       LIMIT 1`,
+    const providerResult = await client.query(
+      `SELECT sms_provider, fonecloud_number_id FROM customers WHERE id = $1 LIMIT 1`,
       [customerId]
     );
+    const provider = providerResult.rows[0]?.sms_provider || 'twilio';
+    const fonecloudNumberIdFromCustomer = providerResult.rows[0]?.fonecloud_number_id;
 
     let twilioNumberId = null;
+    let fonecloudNumberId = null;
 
-    if (twilioResult.rowCount > 0) {
-      twilioNumberId = twilioResult.rows[0].id;
-    } else if (process.env.NODE_ENV !== 'test') {
-      throw new Error('No active phone number available');
+    if (provider === 'fonecloud') {
+      const fnResult = await client.query(
+        `SELECT id FROM fonecloud_numbers WHERE (customer_id = $1 OR id = $2) AND is_active = true LIMIT 1`,
+        [customerId, fonecloudNumberIdFromCustomer]
+      );
+      if (fnResult.rowCount > 0) {
+        fonecloudNumberId = fnResult.rows[0].id;
+      } else if (process.env.NODE_ENV !== 'test') {
+        throw new Error('No Fonecloud number allocated for this customer');
+      }
+    } else {
+      const twilioResult = await client.query(
+        `SELECT id FROM twilio_numbers WHERE customer_id = $1 AND is_active = true LIMIT 1`,
+        [customerId]
+      );
+      if (twilioResult.rowCount > 0) {
+        twilioNumberId = twilioResult.rows[0].id;
+      } else if (process.env.NODE_ENV !== 'test') {
+        throw new Error('No active Twilio number available');
+      }
     }
 
-    // Create conversation (allow null twilio_number_id in tests)
     const conversationResult = await client.query(
-      `INSERT INTO conversations (customer_id, twilio_number_id, lead_name, lead_phone, lead_email, status)
-       VALUES ($1, $2, $3, $4, $5, 'active')
+      `INSERT INTO conversations (customer_id, twilio_number_id, fonecloud_number_id, lead_name, lead_phone, lead_email, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active')
        RETURNING *`,
-      [customerId, twilioNumberId, leadName, leadPhone, leadEmail]
+      [customerId, twilioNumberId, fonecloudNumberId, leadName, leadPhone, leadEmail]
     );
 
     const conversation = conversationResult.rows[0];
@@ -151,9 +171,11 @@ export const closeConversation = async (customerId, conversationId) => {
 // Send message in conversation
 export const sendMessage = async (customerId, conversationId, content, sender = 'system') => {
   const conversation = await query(
-    `SELECT c.*, tn.phone_number as twilio_number
+    `SELECT c.*, tn.phone_number as twilio_number, fn.phone_number as fonecloud_number,
+            COALESCE(tn.phone_number, fn.phone_number) as reply_number
      FROM conversations c
      LEFT JOIN twilio_numbers tn ON c.twilio_number_id = tn.id
+     LEFT JOIN fonecloud_numbers fn ON c.fonecloud_number_id = fn.id
      WHERE c.id = $1 AND c.customer_id = $2 AND c.status = 'active'`,
     [conversationId, customerId]
   );
@@ -163,6 +185,7 @@ export const sendMessage = async (customerId, conversationId, content, sender = 
   }
 
   const conv = conversation.rows[0];
+  const fromNumber = conv.reply_number || conv.twilio_number || conv.fonecloud_number;
 
   // Store message
   const messageResult = await query(
@@ -179,7 +202,7 @@ export const sendMessage = async (customerId, conversationId, content, sender = 
     customerId,
     to: conv.lead_phone,
     body: content,
-    from: conv.twilio_number,
+    from: fromNumber,
     options: {
       conversationId,
       messageId: message.id,

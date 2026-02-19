@@ -51,6 +51,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     // when onboarding is completed.
     const [twilioNumber, setTwilioNumber] = useState<string | null>(null);
     const [provisioningNumber, setProvisioningNumber] = useState(false);
+    const [phoneNumberError, setPhoneNumberError] = useState<string | null>(null);
 
     // Step 4: acceptance of terms and DPA before completing onboarding
     const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -270,6 +271,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         if (step === 3) {
             try {
                 setProvisioningNumber(true);
+                setPhoneNumberError(null);
 
                 // 1) Check if a number already exists
                 const existingRes = await fetch(`${API_BASE}/api/phone-numbers`, {
@@ -286,7 +288,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     }
                 }
 
-                // 2) If no number yet, provision one now for this tenant
+                // 2) If no number yet, provision one now for this tenant (Twilio buy or Fonecloud allocate)
                 if (!number) {
                     const provisionRes = await fetch(`${API_BASE}/api/phone-numbers`, {
                         method: 'POST',
@@ -298,7 +300,14 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                         const body = await provisionRes.json().catch(() => null);
                         number = body?.phoneNumber || body?.phone_number || null;
                     } else {
-                        console.error('Failed to provision Twilio number during onboarding');
+                        const errBody = await provisionRes?.json().catch(() => ({}));
+                        const msg = errBody?.error || provisionRes?.statusText || '';
+                        if (provisionRes?.status === 503 || msg.toLowerCase().includes('no fonecloud numbers') || msg.toLowerCase().includes('no numbers available')) {
+                            setPhoneNumberError('Ingen ledige telefonnumre i puljen lige nu. Kontakt support for at få tildelt et nummer.');
+                        } else {
+                            setPhoneNumberError(msg || 'Kunne ikke tilknytte telefonnummer. Prøv igen eller kontakt support.');
+                        }
+                        console.error('Failed to provision phone number during onboarding', msg);
                     }
                 }
 
@@ -311,7 +320,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                 // in the dashboard, even if the user closes the wizard early.
                 await saveSettings();
             } catch (err) {
-                console.error('Error ensuring Twilio number during onboarding', err);
+                console.error('Error ensuring phone number during onboarding', err);
+                setPhoneNumberError('Der opstod en fejl. Prøv igen eller kontakt support.');
             } finally {
                 setProvisioningNumber(false);
             }
@@ -679,6 +689,12 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     )}
                 </div>
             </div>
+
+            {phoneNumberError && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    {phoneNumberError}
+                </div>
+            )}
         </div>
     );
 

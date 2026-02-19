@@ -73,6 +73,20 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
               Kunder
             </NavLink>
             <NavLink
+              to="/fonecloud-numbers"
+              onClick={() => setNavOpen(false)}
+              className={({ isActive }) =>
+                [
+                  'flex items-center gap-2 rounded-lg px-3 py-2.5 font-medium transition-colors',
+                  isActive
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-700 hover:bg-slate-100',
+                ].join(' ')
+              }
+            >
+              Fonecloud-numre
+            </NavLink>
+            <NavLink
               to="/status"
               onClick={() => setNavOpen(false)}
               className={({ isActive }) =>

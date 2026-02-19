@@ -20,11 +20,12 @@ import { logInfo, logError } from '../utils/logger.mjs';
  * @param {string} params.body
  * @param {string} [params.providerMessageId]
  * @param {string} [params.twilioNumberId]
+ * @param {string} [params.fonecloudNumberId]
  * @returns {Promise<{success: boolean, conversationId: string, messageId: string}>}
  */
 export const applyInboundMessage = async (
   client,
-  { customerId, from, to, body, providerMessageId, twilioNumberId = null }
+  { customerId, from, to, body, providerMessageId, twilioNumberId = null, fonecloudNumberId = null }
 ) => {
   logInfo('Applying inbound SMS message', {
     customerId,
@@ -47,10 +48,10 @@ export const applyInboundMessage = async (
   if (conversationResult.rowCount === 0) {
     // Create new conversation
     const newConversation = await client.query(
-      `INSERT INTO conversations (customer_id, twilio_number_id, lead_phone, lead_source)
-       VALUES ($1, $2, $3, 'sms')
+      `INSERT INTO conversations (customer_id, twilio_number_id, fonecloud_number_id, lead_phone, lead_source)
+       VALUES ($1, $2, $3, $4, 'sms')
        RETURNING id`,
-      [customerId, twilioNumberId, from]
+      [customerId, twilioNumberId, fonecloudNumberId, from]
     );
     conversationId = newConversation.rows[0].id;
 

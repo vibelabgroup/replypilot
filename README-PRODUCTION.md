@@ -449,6 +449,23 @@ Required for production:
 - Redis connection status
 - API response time tracking
 
+## Database Migrations
+
+Run all SQL migrations (including the Fonecloud pool) before starting the API:
+
+```bash
+cd server
+npm run migrate
+```
+
+Or from the repo root:
+
+```bash
+npm run server:migrate
+```
+
+This applies all files in `server/migrations` (`001_initial.sql`, `002_sms_multi_provider.sql`, `003_fonecloud_numbers.sql`, ...).
+
 ## Testing
 
 ```bash

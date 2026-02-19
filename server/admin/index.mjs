@@ -9,7 +9,13 @@ import { login as authLogin, logout as authLogout } from '../services/authServic
 import { query, checkDbHealth } from '../core/db.mjs';
 import { initDb } from '../db.mjs';
 import { redis } from '../core/redis.mjs';
-import { queueSms } from '../core/sms/gateway.mjs';
+import { queueSms, provisionNumber } from '../core/sms/gateway.mjs';
+import {
+  getPoolNumbers,
+  getAllocatedNumbers,
+  addToPool,
+  releaseToPool,
+} from '../services/fonecloudNumberService.mjs';
 
 const app = express();
 const port = process.env.ADMIN_API_PORT || 3100;
@@ -107,6 +113,12 @@ app.get(
               ORDER BY tn.created_at DESC
               LIMIT 1
             ) AS twilio_phone_number,
+            (
+              SELECT fn.phone_number
+              FROM fonecloud_numbers fn
+              WHERE fn.customer_id = c.id AND fn.is_active = true
+              LIMIT 1
+            ) AS fonecloud_phone_number,
             c.created_at
           FROM customers c
           ORDER BY c.created_at DESC
@@ -171,7 +183,14 @@ app.get(
               WHERE tn.customer_id = c.id AND tn.is_active = true
               ORDER BY tn.created_at DESC
               LIMIT 1
-            ) AS twilio_phone_number
+            ) AS twilio_phone_number,
+            c.fonecloud_number_id,
+            (
+              SELECT fn.phone_number
+              FROM fonecloud_numbers fn
+              WHERE fn.id = c.fonecloud_number_id AND fn.is_active = true
+              LIMIT 1
+            ) AS fonecloud_phone_number
           FROM customers c
           LEFT JOIN company_settings cs ON cs.customer_id = c.id
           LEFT JOIN ai_settings ai ON ai.customer_id = c.id
@@ -253,7 +272,7 @@ app.patch(
   requireAdmin,
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { provider, fonecloud_sender_id } = req.body || {};
+    const { provider, fonecloud_sender_id, fonecloud_number_id } = req.body || {};
 
     if (provider && !['twilio', 'fonecloud'].includes(provider)) {
       res.status(400).json({
@@ -262,17 +281,33 @@ app.patch(
       return;
     }
 
+    if (fonecloud_number_id) {
+      const fnCheck = await query(
+        `SELECT id FROM fonecloud_numbers WHERE id = $1 AND customer_id IS NULL AND is_active = true`,
+        [fonecloud_number_id]
+      );
+      if (fnCheck.rowCount === 0) {
+        res.status(400).json({ error: 'Fonecloud number not found or already allocated' });
+        return;
+      }
+      await query(
+        `UPDATE fonecloud_numbers SET customer_id = $1, allocated_at = NOW(), updated_at = NOW() WHERE id = $2`,
+        [id, fonecloud_number_id]
+      );
+    }
+
     const result = await query(
       `
         UPDATE customers
         SET
           sms_provider = COALESCE($1, sms_provider),
           fonecloud_sender_id = COALESCE($2, fonecloud_sender_id),
+          fonecloud_number_id = COALESCE($3, fonecloud_number_id),
           updated_at = NOW()
-        WHERE id = $3
-        RETURNING id, email, name, sms_provider, fonecloud_sender_id
+        WHERE id = $4
+        RETURNING id, email, name, sms_provider, fonecloud_sender_id, fonecloud_number_id
       `,
-      [provider || null, fonecloud_sender_id || null, id]
+      [provider || null, fonecloud_sender_id ?? undefined, fonecloud_number_id ?? undefined, id]
     );
 
     if (result.rowCount === 0) {
@@ -312,6 +347,78 @@ app.post(
       success: true,
       queued: true,
     });
+  })
+);
+
+// Allocate a Fonecloud number from pool to a customer (admin)
+app.post(
+  '/api/admin/customers/:id/allocate-fonecloud-number',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await provisionNumber({ customerId: id });
+    if (result.success) {
+      res.json({ success: true, phoneNumber: result.phoneNumber });
+      return;
+    }
+    const status = result.error?.includes('No Fonecloud numbers available') ? 503 : 400;
+    res.status(status).json({ error: result.error || 'Allocation failed' });
+  })
+);
+
+// ---- Fonecloud numbers pool ----
+app.get(
+  '/api/admin/fonecloud-numbers',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const status = req.query.status; // 'pool' | 'allocated' | omit = all
+    let rows;
+    if (status === 'pool') {
+      rows = await getPoolNumbers();
+    } else if (status === 'allocated') {
+      rows = await getAllocatedNumbers();
+    } else {
+      const [poolRows, allocRows] = await Promise.all([getPoolNumbers(), getAllocatedNumbers()]);
+      rows = [...allocRows.map((r) => ({ ...r, _section: 'allocated' })), ...poolRows.map((r) => ({ ...r, _section: 'pool' }))];
+    }
+    res.json({ data: rows });
+  })
+);
+
+app.post(
+  '/api/admin/fonecloud-numbers',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { phone_number, notes } = req.body || {};
+    if (!phone_number || typeof phone_number !== 'string') {
+      res.status(400).json({ error: 'phone_number is required' });
+      return;
+    }
+    const row = await addToPool(phone_number.trim(), notes || null);
+    res.status(201).json(row);
+  })
+);
+
+app.patch(
+  '/api/admin/fonecloud-numbers/:id/release',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const numResult = await query(
+      `SELECT id, customer_id, phone_number FROM fonecloud_numbers WHERE id = $1 AND customer_id IS NOT NULL AND is_active = true`,
+      [id]
+    );
+    if (numResult.rowCount === 0) {
+      res.status(404).json({ error: 'Number not found or not allocated' });
+      return;
+    }
+    const { customer_id, phone_number } = numResult.rows[0];
+    const result = await releaseToPool(customer_id, phone_number);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
   })
 );
 

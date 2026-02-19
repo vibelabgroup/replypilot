@@ -1,5 +1,6 @@
 import { createSmsProvider } from '../contract.mjs';
 import { logError, logInfo, logDebug } from '../../utils/logger.mjs';
+import { allocateFromPool, releaseToPool } from '../../services/fonecloudNumberService.mjs';
 
 const getConfig = () => {
   const baseUrl = process.env.FONECLOUD_API_BASE_URL;
@@ -154,17 +155,29 @@ export const fonecloudProvider = createSmsProvider({
     };
   },
 
-  async provisionNumber() {
+  async provisionNumber({ customerId }) {
+    const result = await allocateFromPool(customerId);
+    if (result.success) {
+      return {
+        success: true,
+        phoneNumber: result.phoneNumber,
+        sid: result.id,
+      };
+    }
     return {
       success: false,
-      error: 'Number provisioning is not supported for Fonecloud',
+      error: result.error || 'Number provisioning failed',
     };
   },
 
-  async releaseNumber() {
+  async releaseNumber({ customerId, phoneNumber }) {
+    const result = await releaseToPool(customerId, phoneNumber);
+    if (result.success) {
+      return { success: true };
+    }
     return {
       success: false,
-      error: 'Number release is not supported for Fonecloud',
+      error: result.error || 'Number release failed',
     };
   },
 

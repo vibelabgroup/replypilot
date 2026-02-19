@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server/index.mjs",
+    "server:migrate": "cd server && npm run migrate",
     "admin:dev": "cd admin && vite",
     "admin:build": "cd admin && vite build",
     "test": "node --test"

@@ -159,10 +159,41 @@ export async function initDb() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS fonecloud_numbers (
+      id SERIAL PRIMARY KEY,
+      phone_number TEXT NOT NULL UNIQUE,
+      customer_id INTEGER NULL REFERENCES customers(id) ON DELETE SET NULL,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      allocated_at TIMESTAMPTZ,
+      released_at TIMESTAMPTZ,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'customers' AND column_name = 'fonecloud_number_id') THEN
+        ALTER TABLE customers ADD COLUMN fonecloud_number_id INTEGER REFERENCES fonecloud_numbers(id) ON DELETE SET NULL;
+      END IF;
+    END $$;
+  `);
+
+  await pool.query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'conversations' AND column_name = 'fonecloud_number_id') THEN
+        ALTER TABLE conversations ADD COLUMN fonecloud_number_id INTEGER REFERENCES fonecloud_numbers(id) ON DELETE SET NULL;
+      END IF;
+    END $$;
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS conversations (
       id SERIAL PRIMARY KEY,
       customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
       twilio_number_id INTEGER REFERENCES twilio_numbers(id) ON DELETE SET NULL,
+      fonecloud_number_id INTEGER REFERENCES fonecloud_numbers(id) ON DELETE SET NULL,
       lead_name TEXT,
       lead_phone TEXT NOT NULL,
       lead_email TEXT,
@@ -473,7 +504,10 @@ export async function getSettingsByCustomerId(customerId) {
       customerId,
     ]),
     pool.query(
-      "SELECT sms_provider, fonecloud_sender_id FROM customers WHERE id = $1 LIMIT 1",
+      `SELECT c.sms_provider, c.fonecloud_sender_id, c.fonecloud_number_id, fn.phone_number AS fonecloud_phone_number
+       FROM customers c
+       LEFT JOIN fonecloud_numbers fn ON c.fonecloud_number_id = fn.id AND fn.is_active = true
+       WHERE c.id = $1 LIMIT 1`,
       [customerId]
     ),
   ]);
@@ -487,6 +521,8 @@ export async function getSettingsByCustomerId(customerId) {
       ? {
           provider: customerRow.sms_provider || 'twilio',
           fonecloud_sender_id: customerRow.fonecloud_sender_id || null,
+          fonecloud_number_id: customerRow.fonecloud_number_id || null,
+          fonecloud_phone_number: customerRow.fonecloud_phone_number || null,
         }
       : null,
   };

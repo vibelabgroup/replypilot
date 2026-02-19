@@ -42,6 +42,37 @@ const requireProvider = (providerId) => {
 };
 
 /**
+ * Resolve the "from" number/sender for a customer for outbound SMS.
+ * Returns allocated Fonecloud number, or Twilio number, or for Fonecloud fallback the fonecloud_sender_id.
+ * @param {string} customerId
+ * @returns {Promise<string|null>}
+ */
+export const getFromNumberForCustomer = async (customerId) => {
+  if (!customerId) return null;
+  try {
+    const result = await query(
+      `SELECT c.sms_provider, c.fonecloud_sender_id, c.fonecloud_number_id,
+              fn.phone_number AS fonecloud_phone_number,
+              (SELECT tn.phone_number FROM twilio_numbers tn WHERE tn.customer_id = c.id AND tn.is_active = true LIMIT 1) AS twilio_phone_number
+       FROM customers c
+       LEFT JOIN fonecloud_numbers fn ON c.fonecloud_number_id = fn.id AND fn.is_active = true
+       WHERE c.id = $1 LIMIT 1`,
+      [customerId]
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    if (row.sms_provider === 'fonecloud') {
+      if (row.fonecloud_phone_number) return row.fonecloud_phone_number;
+      return row.fonecloud_sender_id || null;
+    }
+    return row.twilio_phone_number || null;
+  } catch (err) {
+    logError('getFromNumberForCustomer failed', { customerId, error: err?.message });
+    return null;
+  }
+};
+
+/**
  * Send SMS through the appropriate provider for the customer.
  *
  * @param {Object} params
@@ -61,13 +92,18 @@ export const sendSms = async ({
   const providerId = await getProviderIdForCustomer(customerId);
   const provider = requireProvider(providerId);
 
+  let fromNumber = from;
+  if (!fromNumber) {
+    fromNumber = await getFromNumberForCustomer(customerId);
+  }
+
   logDebug('Sending SMS via provider', {
     provider: providerId,
     customerId,
     to,
   });
 
-  const result = await provider.send({ to, body, from, options });
+  const result = await provider.send({ to, body, from: fromNumber, options });
 
   logInfo('SMS send result', {
     provider: providerId,

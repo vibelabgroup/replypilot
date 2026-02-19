@@ -6,7 +6,7 @@ import cors from "cors";
 import Stripe from "stripe";
 import cookieParser from "cookie-parser";
 import { logInfo, logWarn, logError } from "./logger.mjs";
-import { handleIncomingMessage } from "./sms/gateway.mjs";
+import { handleIncomingMessage, provisionNumber } from "./sms/gateway.mjs";
 import {
   initDb,
   pool,
@@ -387,6 +387,59 @@ app.get("/api/settings", requireAuth, async (req, res) => {
   } catch (err) {
     logError("Error in GET /api/settings", { error: err });
     res.status(500).json({ error: "Unable to load settings" });
+  }
+});
+
+// Phone numbers for tenant (Twilio or Fonecloud pool)
+app.get("/api/phone-numbers", requireAuth, async (req, res) => {
+  try {
+    const { customerId } = req.auth;
+    const cust = await pool.query(
+      `SELECT sms_provider FROM customers WHERE id = $1 LIMIT 1`,
+      [customerId]
+    );
+    const provider = cust.rows[0]?.sms_provider || "twilio";
+
+    if (provider === "fonecloud") {
+      const fn = await pool.query(
+        `SELECT id, phone_number FROM fonecloud_numbers WHERE customer_id = $1 AND is_active = true`,
+        [customerId]
+      );
+      return res.json({
+        phoneNumbers: fn.rows.map((r) => ({ id: r.id, phone_number: r.phone_number })),
+      });
+    }
+
+    const tn = await pool.query(
+      `SELECT id, phone_number FROM twilio_numbers WHERE customer_id = $1 AND is_active = true ORDER BY created_at DESC`,
+      [customerId]
+    );
+    res.json({
+      phoneNumbers: tn.rows.map((r) => ({ id: r.id, phone_number: r.phone_number })),
+    });
+  } catch (err) {
+    logError("Error in GET /api/phone-numbers", { error: err });
+    res.status(500).json({ error: "Unable to load phone numbers" });
+  }
+});
+
+app.post("/api/phone-numbers", requireAuth, async (req, res) => {
+  try {
+    const { customerId } = req.auth;
+    const result = await provisionNumber({ customerId });
+    if (result.success) {
+      return res.json({
+        phoneNumber: result.phoneNumber,
+        phone_number: result.phoneNumber,
+      });
+    }
+    const status = result.error?.includes("No Fonecloud numbers available")
+      ? 503
+      : 400;
+    res.status(status).json({ error: result.error || "Provisioning failed" });
+  } catch (err) {
+    logError("Error in POST /api/phone-numbers", { error: err });
+    res.status(500).json({ error: "Unable to provision phone number" });
   }
 });
 

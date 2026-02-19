@@ -4,6 +4,7 @@ import { AdminLayout } from './layout/AdminLayout';
 import { CustomerListPage } from './pages/CustomerListPage';
 import { CustomerDetailPage } from './pages/CustomerDetailPage';
 import { CustomerConversationPage } from './pages/CustomerConversationPage';
+import { FonecloudNumbersPage } from './pages/FonecloudNumbersPage';
 import { SystemStatusPage } from './pages/SystemStatusPage';
 import { AdminLoginPage } from './pages/AdminLoginPage';
 import { useAdminAuth } from './state/useAdminAuth';
@@ -24,6 +25,7 @@ export const AdminApp: React.FC = () => {
                 <Route path="/customers" element={<CustomerListPage />} />
                 <Route path="/customers/:id" element={<CustomerDetailPage />} />
                 <Route path="/customers/:id/conversations/:conversationId" element={<CustomerConversationPage />} />
+                <Route path="/fonecloud-numbers" element={<FonecloudNumbersPage />} />
                 <Route path="/status" element={<SystemStatusPage />} />
               </Routes>
             </AdminLayout>
