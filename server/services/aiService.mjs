@@ -119,7 +119,7 @@ export const generateResponse = async (customerId, conversationId, leadMessage) 
         logDebug('Calling Gemini API', { customerId, conversationId, attempt });
 
         const result = await genAI.models.generateContent({
-          model: 'gemini-pro',
+          model: 'gemini-1.5-flash',
           contents: messages,
           config: {
             temperature: aiSettings.temperature,
@@ -302,7 +302,7 @@ const generateDemoResponse = async (conversationId, leadMessage) => {
         logDebug('Calling Gemini API (demo)', { conversationId, attempt });
 
         const result = await genAI.models.generateContent({
-          model: 'gemini-pro',
+          model: 'gemini-1.5-flash',
           contents: messages,
           config: {
             temperature: aiSettings.temperature,
@@ -447,41 +447,48 @@ export const processAIGenerationJob = async (job) => {
     ? await generateDemoResponse(conversationId, leadMessage)
     : await generateResponse(customerId, conversationId, leadMessage);
 
-  if (result.success) {
-    // Store AI response
-    const messageResult = await query(
-      `INSERT INTO messages (conversation_id, direction, sender, content)
-       VALUES ($1, 'outbound', 'ai', $2)
-       RETURNING id`,
-      [conversationId, result.response]
-    );
+  // Even if AI generation failed, we may still have a fallback response.
+  if (!result.response) {
+    return result;
+  }
 
-    // Update AI message count
-    await query(
-      `UPDATE conversations
-       SET ai_response_count = ai_response_count + 1
-       WHERE id = $1`,
-      [conversationId]
-    );
+  // Store AI (or fallback) response
+  const messageResult = await query(
+    `
+      INSERT INTO messages (conversation_id, direction, sender, content)
+      VALUES ($1, 'outbound', 'ai', $2)
+      RETURNING id
+    `,
+    [conversationId, result.response]
+  );
 
-    // Queue SMS send
-    const conversation = await query(
-      `SELECT lead_phone FROM conversations WHERE id = $1`,
-      [conversationId]
-    );
+  // Update AI message count
+  await query(
+    `
+      UPDATE conversations
+      SET ai_response_count = ai_response_count + 1
+      WHERE id = $1
+    `,
+    [conversationId]
+  );
 
-    if (conversation.rowCount > 0) {
-      const { queueSms } = await import('../sms/gateway.mjs');
-      await queueSms({
-        customerId,
-        to: conversation.rows[0].lead_phone,
-        body: result.response,
-        options: {
-          conversationId,
-          messageId: messageResult.rows[0].id,
-        },
-      });
-    }
+  // Queue SMS send
+  const conversation = await query(
+    `SELECT lead_phone FROM conversations WHERE id = $1`,
+    [conversationId]
+  );
+
+  if (conversation.rowCount > 0) {
+    const { queueSms } = await import('../sms/gateway.mjs');
+    await queueSms({
+      customerId,
+      to: conversation.rows[0].lead_phone,
+      body: result.response,
+      options: {
+        conversationId,
+        messageId: messageResult.rows[0].id,
+      },
+    });
   }
 
   return result;
