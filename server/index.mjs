@@ -7,6 +7,7 @@ import Stripe from "stripe";
 import cookieParser from "cookie-parser";
 import { logInfo, logWarn, logError } from "./logger.mjs";
 import { handleIncomingMessage, provisionNumber } from "./sms/gateway.mjs";
+import { handleIncomingVoiceDemo } from "./services/twilioService.mjs";
 import {
   initDb,
   pool,
@@ -234,6 +235,32 @@ app.post("/webhook/twilio", express.urlencoded({ extended: true }), async (req, 
     res.status(500).type("text/xml").send("<Response></Response>");
   }
 });
+
+// Twilio incoming VOICE webhook for demo number (missed call -> AI SMS)
+app.post(
+  "/webhook/twilio-voice-demo",
+  express.urlencoded({ extended: true }),
+  async (req, res) => {
+    try {
+      await handleIncomingVoiceDemo(req.body);
+    } catch (err) {
+      logError("Twilio voice demo webhook error", { error: err?.message });
+      // We still return TwiML so caller is not left hanging
+    }
+
+    // Always respond with simple TwiML so the call ends cleanly
+    const twiml =
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      "<Response>" +
+      '<Say language="da-DK" voice="alice">' +
+      "Tak for dit opkald. Du modtager straks en SMS fra vores AI-receptionist." +
+      "</Say>" +
+      "<Hangup/>" +
+      "</Response>";
+
+    res.type("text/xml").send(twiml);
+  }
+);
 
 // Auth routes
 app.post("/api/auth/signup", async (req, res) => {

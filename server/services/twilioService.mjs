@@ -265,6 +265,52 @@ export const verifyWebhookSignature = (url, body, signature) => {
   return Twilio.validateRequest(authToken, signature, url, body);
 };
 
+// Handle incoming voice call for demo number: treat as missed call and trigger AI SMS
+export const handleIncomingVoiceDemo = async (payload) => {
+  const { From, To, CallSid } = payload;
+
+  logInfo('Incoming Twilio voice call (demo)', {
+    from: From,
+    to: To,
+    callSid: CallSid,
+  });
+
+  return await withTransaction(async (client) => {
+    // Find customer by Twilio number
+    const twilioNumberResult = await client.query(
+      `SELECT id, customer_id FROM twilio_numbers WHERE phone_number = $1 AND is_active = true`,
+      [To]
+    );
+
+    if (twilioNumberResult.rowCount === 0) {
+      logError('No customer found for demo voice number', { to: To });
+      throw new Error('Phone number not registered');
+    }
+
+    const twilioNumber = twilioNumberResult.rows[0];
+    const customerId = twilioNumber.customer_id;
+    const twilioNumberId = twilioNumber.id;
+
+    // Synthetic "lead message" that tells the AI this was a missed call
+    const syntheticBody =
+      'En potentiel kunde har lige ringet til virksomheden, men opkaldet kunne ikke besvares. ' +
+      'Skriv en venlig SMS på dansk, hvor du præsenterer virksomheden kort, forklarer at opkaldet blev misset, ' +
+      'og beder dem kort skrive hvad de har brug for.';
+
+    // Reuse inbound SMS pipeline so AI auto-responsen, leads og samtaler håndteres ens
+    const result = await applyInboundMessage(client, {
+      customerId,
+      from: From,
+      to: To,
+      body: syntheticBody,
+      providerMessageId: CallSid,
+      twilioNumberId,
+    });
+
+    return result;
+  });
+};
+
 // Helper to queue notifications
 const queueNotification = async (customerId, type, payload) => {
   await enqueueJob('notification_queue', {
