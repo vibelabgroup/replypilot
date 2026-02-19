@@ -145,6 +145,14 @@ export async function initDb() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS twilio_numbers (
       id SERIAL PRIMARY KEY,
       customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -298,6 +306,33 @@ export async function initDb() {
     $$;
   `);
 
+  // Ensure messages has provider_message_id and sms_provider columns for multi-provider support.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'messages'
+          AND column_name = 'provider_message_id'
+      ) THEN
+        ALTER TABLE messages
+        ADD COLUMN provider_message_id VARCHAR(255);
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'messages'
+          AND column_name = 'sms_provider'
+      ) THEN
+        ALTER TABLE messages
+        ADD COLUMN sms_provider VARCHAR(50);
+      END IF;
+    END
+    $$;
+  `);
+
   // Ensure company_settings has website, industry, VAT/CVR, service area and extended address/contact fields.
   await pool.query(`
     ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS website TEXT;
@@ -324,6 +359,52 @@ export async function initDb() {
       ) THEN
         ALTER TABLE ai_settings
         ADD COLUMN agent_name TEXT;
+      END IF;
+    END
+    $$;
+  `);
+
+  // Ensure ai_settings.fallback_message exists on existing databases.
+  // Mirrors migrations/005_ai_fallback_message.sql.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'fallback_message'
+      ) THEN
+        ALTER TABLE ai_settings
+        ADD COLUMN fallback_message TEXT;
+      END IF;
+    END
+    $$;
+  `);
+
+  // Ensure ai_settings has primary/secondary provider columns on existing databases.
+  // Mirrors migrations/006_ai_providers.sql so deployments work without manual migration runs.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'primary_provider'
+      ) THEN
+        ALTER TABLE ai_settings
+        ADD COLUMN primary_provider VARCHAR(20) NOT NULL DEFAULT 'gemini';
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'secondary_provider'
+      ) THEN
+        ALTER TABLE ai_settings
+        ADD COLUMN secondary_provider VARCHAR(20);
       END IF;
     END
     $$;
