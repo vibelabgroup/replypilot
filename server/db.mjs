@@ -91,6 +91,12 @@ export async function initDb() {
       industry TEXT,
       phone_number TEXT,
       address TEXT,
+      city TEXT,
+      postal_code TEXT,
+      country TEXT,
+      contact_name TEXT,
+      contact_email TEXT,
+      contact_phone TEXT,
       opening_hours JSONB,
       forwarding_number TEXT,
       email_forward TEXT,
@@ -197,6 +203,28 @@ export async function initDb() {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notification_preferences (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      email_enabled BOOLEAN DEFAULT TRUE,
+      email_new_lead BOOLEAN DEFAULT TRUE,
+      email_new_message BOOLEAN DEFAULT FALSE,
+      email_daily_digest BOOLEAN DEFAULT TRUE,
+      email_weekly_report BOOLEAN DEFAULT TRUE,
+      sms_enabled BOOLEAN DEFAULT FALSE,
+      sms_phone TEXT,
+      sms_new_lead BOOLEAN DEFAULT TRUE,
+      sms_new_message BOOLEAN DEFAULT FALSE,
+      digest_type TEXT DEFAULT 'daily',
+      digest_time TIME DEFAULT '09:00',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(customer_id, user_id)
+    );
+  `);
+
   // Ensure SMS multi-provider columns exist on existing databases as well.
   // This mirrors the logic in migrations/002_sms_multi_provider.sql but runs
   // automatically at startup so the code works without manual migration steps.
@@ -239,12 +267,18 @@ export async function initDb() {
     $$;
   `);
 
-  // Ensure company_settings has website, industry, VAT/CVR and service area (used by admin customer detail).
+  // Ensure company_settings has website, industry, VAT/CVR, service area and extended address/contact fields.
   await pool.query(`
     ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS website TEXT;
     ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS industry TEXT;
     ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS vat_number TEXT;
     ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS service_area TEXT;
+    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS city TEXT;
+    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS postal_code TEXT;
+    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS country TEXT;
+    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS contact_name TEXT;
+    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS contact_email TEXT;
+    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS contact_phone TEXT;
   `);
 
   // Ensure ai_settings.agent_name exists on existing databases.

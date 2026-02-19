@@ -14,6 +14,12 @@ type Customer = {
   company_name?: string | null;
   company_phone_number?: string | null;
   company_address?: string | null;
+  company_city?: string | null;
+  company_postal_code?: string | null;
+  company_country?: string | null;
+  contact_name?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
   website?: string | null;
   industry?: string | null;
   vat_number?: string | null;
@@ -30,6 +36,18 @@ type Customer = {
   ai_language?: string | null;
   ai_custom_instructions?: string | null;
   ai_max_message_length?: number | null;
+  // Notification preferences (summary)
+  notify_email_enabled?: boolean;
+  notify_email_new_lead?: boolean;
+  notify_email_new_message?: boolean;
+  notify_email_daily_digest?: boolean;
+  notify_email_weekly_report?: boolean;
+  notify_sms_enabled?: boolean;
+  notify_sms_phone?: string | null;
+  notify_sms_new_lead?: boolean;
+  notify_sms_new_message?: boolean;
+  notify_digest_type?: string | null;
+  notify_digest_time?: string | null;
 };
 
 type Usage = {
@@ -276,6 +294,45 @@ export const CustomerDetailPage: React.FC = () => {
               </span>
             </p>
           )}
+          {(customer.company_postal_code || customer.company_city || customer.company_country) && (
+            <p className="text-xs text-slate-600">
+              By / postnr / land:{' '}
+              <span className="font-medium text-slate-900">
+                {[customer.company_postal_code, customer.company_city, customer.company_country]
+                  .filter(Boolean)
+                  .join(' ')}
+              </span>
+            </p>
+          )}
+          {(customer.contact_name || customer.contact_email || customer.contact_phone) && (
+            <div className="mt-2 space-y-1">
+              <p className="text-xs font-medium text-slate-700">Kontaktperson</p>
+              {customer.contact_name && (
+                <p className="text-xs text-slate-600">
+                  Navn:{' '}
+                  <span className="font-medium text-slate-900">
+                    {customer.contact_name}
+                  </span>
+                </p>
+              )}
+              {customer.contact_email && (
+                <p className="text-xs text-slate-600">
+                  E-mail:{' '}
+                  <span className="font-medium text-slate-900">
+                    {customer.contact_email}
+                  </span>
+                </p>
+              )}
+              {customer.contact_phone && (
+                <p className="text-xs text-slate-600">
+                  Telefon:{' '}
+                  <span className="font-medium text-slate-900">
+                    {customer.contact_phone}
+                  </span>
+                </p>
+              )}
+            </div>
+          )}
           {customer.service_area && (
             <p className="text-xs text-slate-600">
               Dækningsområde:{' '}
@@ -342,6 +399,53 @@ export const CustomerDetailPage: React.FC = () => {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="rounded-xl border bg-white p-4 space-y-2">
+        <h2 className="text-sm font-semibold text-slate-900">Notifikationer</h2>
+        <p className="text-xs text-slate-600 mb-1">E-mail</p>
+        <p className="text-xs text-slate-700">
+          {customer.notify_email_enabled ? 'Aktiveret' : 'Deaktiveret'}
+          {customer.notify_email_enabled && (
+            <>
+              {' · '}
+              {[
+                customer.notify_email_new_lead && 'nye leads',
+                customer.notify_email_new_message && 'nye beskeder',
+                customer.notify_email_daily_digest && 'daglig oversigt',
+                customer.notify_email_weekly_report && 'ugentlig rapport',
+              ]
+                .filter(Boolean)
+                .join(', ')}
+            </>
+          )}
+        </p>
+        <p className="text-xs text-slate-600 mt-2 mb-1">SMS</p>
+        <p className="text-xs text-slate-700">
+          {customer.notify_sms_enabled ? 'Aktiveret' : 'Deaktiveret'}
+          {customer.notify_sms_enabled && customer.notify_sms_phone && (
+            <> · {customer.notify_sms_phone}</>
+          )}
+          {customer.notify_sms_enabled && (
+            <>
+              {' · '}
+              {[
+                customer.notify_sms_new_lead && 'nye leads',
+                customer.notify_sms_new_message && 'nye beskeder',
+              ]
+                .filter(Boolean)
+                .join(', ')}
+            </>
+          )}
+        </p>
+        {customer.notify_digest_type && (
+          <p className="text-xs text-slate-600 mt-2">
+            Samlerapport:{' '}
+            <span className="font-medium text-slate-900">
+              {customer.notify_digest_type} kl. {customer.notify_digest_time || '09:00'}
+            </span>
+          </p>
+        )}
       </div>
 
       <div className="rounded-xl border bg-white p-4 space-y-3">

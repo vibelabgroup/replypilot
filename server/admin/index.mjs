@@ -138,7 +138,7 @@ app.get(
   asyncHandler(async (req, res) => {
     const { id } = req.params;
 
-    const [customerResult, usageResult] = await Promise.all([
+    const [customerResult, usageResult, notifResult] = await Promise.all([
       query(
         `
           SELECT 
@@ -148,6 +148,12 @@ app.get(
             cs.industry,
             cs.phone_number AS company_phone_number,
             cs.address AS company_address,
+            cs.city AS company_city,
+            cs.postal_code AS company_postal_code,
+            cs.country AS company_country,
+            cs.contact_name,
+            cs.contact_email,
+            cs.contact_phone,
             cs.opening_hours,
             cs.forwarding_number,
             cs.email_forward,
@@ -184,6 +190,26 @@ app.get(
         `,
         [id]
       ),
+      query(
+        `
+          SELECT 
+            email_enabled,
+            email_new_lead,
+            email_new_message,
+            email_daily_digest,
+            email_weekly_report,
+            sms_enabled,
+            sms_phone,
+            sms_new_lead,
+            sms_new_message,
+            digest_type,
+            digest_time
+          FROM notification_preferences
+          WHERE customer_id = $1 AND user_id IS NULL
+          LIMIT 1
+        `,
+        [id]
+      ),
     ]);
 
     if (customerResult.rowCount === 0) {
@@ -197,8 +223,25 @@ app.get(
       messages_count: 0,
     };
 
+    const notif = notifResult.rows[0] || null;
+
     res.json({
-      customer,
+      customer: notif
+        ? {
+            ...customer,
+            notify_email_enabled: notif.email_enabled,
+            notify_email_new_lead: notif.email_new_lead,
+            notify_email_new_message: notif.email_new_message,
+            notify_email_daily_digest: notif.email_daily_digest,
+            notify_email_weekly_report: notif.email_weekly_report,
+            notify_sms_enabled: notif.sms_enabled,
+            notify_sms_phone: notif.sms_phone,
+            notify_sms_new_lead: notif.sms_new_lead,
+            notify_sms_new_message: notif.sms_new_message,
+            notify_digest_type: notif.digest_type,
+            notify_digest_time: notif.digest_time,
+          }
+        : customer,
       usage,
     });
   })
