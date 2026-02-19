@@ -87,8 +87,10 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onPaymentComplete
                         <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 text-green-600 shadow-xl shadow-green-100/50">
                              <CheckCircle2 className="w-12 h-12" />
                         </div>
-                        <h3 className="text-2xl font-bold text-slate-900 mb-2">Betaling Godkendt</h3>
-                        <p className="text-slate-500">Klargør din AI receptionist...</p>
+                        <h3 className="text-2xl font-bold text-slate-900 mb-2">Sender dig til betaling</h3>
+                        <p className="text-slate-500">
+                            Vi sender dig nu videre til Stripe, hvor selve betalingen gennemføres sikkert. Luk ikke dette vindue, mens vi omdirigerer dig.
+                        </p>
                         <div className="mt-8 flex justify-center">
                             <Loader2 className="w-6 h-6 text-slate-300 animate-spin" />
                         </div>
