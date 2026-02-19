@@ -100,6 +100,13 @@ app.get(
             c.sms_provider,
             c.fonecloud_sender_id,
             c.stripe_customer_id,
+            (
+              SELECT tn.phone_number
+              FROM twilio_numbers tn
+              WHERE tn.customer_id = c.id AND tn.is_active = true
+              ORDER BY tn.created_at DESC
+              LIMIT 1
+            ) AS twilio_phone_number,
             c.created_at
           FROM customers c
           ORDER BY c.created_at DESC
@@ -138,9 +145,30 @@ app.get(
             c.*,
             cs.company_name,
             cs.website,
-            cs.industry
+            cs.industry,
+            cs.phone_number AS company_phone_number,
+            cs.address AS company_address,
+            cs.opening_hours,
+            cs.forwarding_number,
+            cs.email_forward,
+            cs.notes AS company_notes,
+            cs.vat_number,
+            cs.service_area,
+            ai.agent_name AS ai_agent_name,
+            ai.tone AS ai_tone,
+            ai.language AS ai_language,
+            ai.custom_instructions AS ai_custom_instructions,
+            ai.max_message_length AS ai_max_message_length,
+            (
+              SELECT tn.phone_number
+              FROM twilio_numbers tn
+              WHERE tn.customer_id = c.id AND tn.is_active = true
+              ORDER BY tn.created_at DESC
+              LIMIT 1
+            ) AS twilio_phone_number
           FROM customers c
           LEFT JOIN company_settings cs ON cs.customer_id = c.id
+          LEFT JOIN ai_settings ai ON ai.customer_id = c.id
           WHERE c.id = $1
         `,
         [id]

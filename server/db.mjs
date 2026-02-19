@@ -95,6 +95,8 @@ export async function initDb() {
       forwarding_number TEXT,
       email_forward TEXT,
       notes TEXT,
+      vat_number TEXT,
+      service_area TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -237,10 +239,12 @@ export async function initDb() {
     $$;
   `);
 
-  // Ensure company_settings has website and industry (used by admin customer detail).
+  // Ensure company_settings has website, industry, VAT/CVR and service area (used by admin customer detail).
   await pool.query(`
     ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS website TEXT;
     ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS industry TEXT;
+    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS vat_number TEXT;
+    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS service_area TEXT;
   `);
 
   // Ensure ai_settings.agent_name exists on existing databases.

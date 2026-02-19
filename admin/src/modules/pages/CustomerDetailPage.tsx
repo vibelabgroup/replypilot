@@ -10,6 +10,26 @@ type Customer = {
   subscription_status: string | null;
   sms_provider: string | null;
   fonecloud_sender_id: string | null;
+  // Company / settings (joined from company_settings)
+  company_name?: string | null;
+  company_phone_number?: string | null;
+  company_address?: string | null;
+  website?: string | null;
+  industry?: string | null;
+  vat_number?: string | null;
+  service_area?: string | null;
+  opening_hours?: any;
+  forwarding_number?: string | null;
+  email_forward?: string | null;
+  company_notes?: string | null;
+  // Telephony
+  twilio_phone_number?: string | null;
+  // AI configuration (joined from ai_settings)
+  ai_agent_name?: string | null;
+  ai_tone?: string | null;
+  ai_language?: string | null;
+  ai_custom_instructions?: string | null;
+  ai_max_message_length?: number | null;
 };
 
 type Usage = {
@@ -127,6 +147,8 @@ export const CustomerDetailPage: React.FC = () => {
 
   const { customer, usage } = data;
 
+  const openingHours = customer.opening_hours || null;
+
   return (
     <div className="space-y-6">
       <div>
@@ -166,6 +188,14 @@ export const CustomerDetailPage: React.FC = () => {
         <div className="rounded-xl border bg-white p-4">
           <h2 className="text-sm font-semibold text-slate-900 mb-2">SMS-udbyder</h2>
           <div className="space-y-3">
+            {customer.twilio_phone_number && (
+              <div>
+                <p className="text-xs text-slate-600 mb-1">Aktivt SMS-nummer</p>
+                <p className="text-xs font-mono text-slate-800">
+                  {customer.twilio_phone_number}
+                </p>
+              </div>
+            )}
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">
                 Udbyder
@@ -201,6 +231,116 @@ export const CustomerDetailPage: React.FC = () => {
               {saving ? 'Gemmer…' : 'Gem SMS-indstillinger'}
             </button>
           </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border bg-white p-4 space-y-2">
+          <h2 className="text-sm font-semibold text-slate-900">Virksomhed</h2>
+          <p className="text-xs text-slate-600">
+            Navn:{' '}
+            <span className="font-medium text-slate-900">
+              {customer.company_name || customer.name || 'Ikke angivet'}
+            </span>
+          </p>
+          {customer.website && (
+            <p className="text-xs text-slate-600">
+              Website:{' '}
+              <a
+                href={customer.website}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-medium text-slate-900 underline underline-offset-2"
+              >
+                {customer.website}
+              </a>
+            </p>
+          )}
+          {customer.industry && (
+            <p className="text-xs text-slate-600">
+              Branche:{' '}
+              <span className="font-medium text-slate-900">{customer.industry}</span>
+            </p>
+          )}
+          {customer.vat_number && (
+            <p className="text-xs text-slate-600">
+              CVR:{' '}
+              <span className="font-mono text-slate-900">{customer.vat_number}</span>
+            </p>
+          )}
+          {customer.company_address && (
+            <p className="text-xs text-slate-600">
+              Adresse:{' '}
+              <span className="font-medium text-slate-900">
+                {customer.company_address}
+              </span>
+            </p>
+          )}
+          {customer.service_area && (
+            <p className="text-xs text-slate-600">
+              Dækningsområde:{' '}
+              <span className="font-medium text-slate-900">
+                {customer.service_area}
+              </span>
+            </p>
+          )}
+          {openingHours && (
+            <div className="mt-2">
+              <p className="text-xs font-medium text-slate-700 mb-1">Åbningstider</p>
+              <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-600">
+                {Object.entries(openingHours).map(([day, hours]: any) => (
+                  <div key={day} className="flex justify-between">
+                    <span className="capitalize">{day}</span>
+                    <span className="font-mono">
+                      {hours?.open && hours?.close
+                        ? `${hours.open}–${hours.close}`
+                        : 'Lukket'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-xl border bg-white p-4 space-y-2">
+          <h2 className="text-sm font-semibold text-slate-900">AI-konfiguration</h2>
+          <p className="text-xs text-slate-600">
+            Agentnavn:{' '}
+            <span className="font-medium text-slate-900">
+              {customer.ai_agent_name || 'Ikke angivet'}
+            </span>
+          </p>
+          <p className="text-xs text-slate-600">
+            Tone:{' '}
+            <span className="font-medium text-slate-900">
+              {customer.ai_tone || 'standard'}
+            </span>
+          </p>
+          <p className="text-xs text-slate-600">
+            Sprog:{' '}
+            <span className="font-medium text-slate-900">
+              {customer.ai_language || 'da'}
+            </span>
+          </p>
+          {typeof customer.ai_max_message_length === 'number' && (
+            <p className="text-xs text-slate-600">
+              Maks. beskedlængde:{' '}
+              <span className="font-medium text-slate-900">
+                {customer.ai_max_message_length} tegn
+              </span>
+            </p>
+          )}
+          {customer.ai_custom_instructions && (
+            <div className="mt-2">
+              <p className="text-xs font-medium text-slate-700 mb-1">
+                Specialinstruktioner
+              </p>
+              <p className="text-xs text-slate-700 line-clamp-3">
+                {customer.ai_custom_instructions}
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
