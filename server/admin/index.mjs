@@ -568,9 +568,20 @@ app.get(
 
     const convResult = await query(
       `
-        SELECT c.id, c.customer_id, c.lead_name, c.lead_phone, c.lead_email, c.status,
-               c.message_count, c.ai_response_count, c.last_message_at, c.created_at
+        SELECT 
+          c.id,
+          c.customer_id,
+          c.lead_name,
+          c.lead_phone,
+          c.lead_email,
+          c.status,
+          c.message_count,
+          c.ai_response_count,
+          c.last_message_at,
+          c.created_at,
+          ai.agent_name AS ai_agent_name
         FROM conversations c
+        LEFT JOIN ai_settings ai ON ai.customer_id = c.customer_id
         WHERE c.id = $1 AND c.customer_id = $2
       `,
       [conversationId, id]

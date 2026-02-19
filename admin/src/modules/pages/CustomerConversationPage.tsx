@@ -12,6 +12,7 @@ type Conversation = {
   ai_response_count: number;
   last_message_at: string | null;
   created_at: string;
+  ai_agent_name?: string | null;
 };
 
 type Message = {
@@ -83,6 +84,29 @@ export const CustomerConversationPage: React.FC = () => {
   const { conversation, messages } = data;
   const isInbound = (m: Message) => m.direction === 'inbound' || m.sender === 'lead';
 
+  const hasMissedCallActivity = messages.some((m) =>
+    m.content.startsWith(
+      'En potentiel kunde har lige ringet til virksomheden, men opkaldet kunne ikke besvares.'
+    )
+  );
+
+  const visibleMessages = messages.filter(
+    (m) =>
+      !m.content.startsWith(
+        'En potentiel kunde har lige ringet til virksomheden, men opkaldet kunne ikke besvares.'
+      )
+  );
+
+  const getSenderLabel = (m: Message) => {
+    if (m.sender === 'ai') {
+      return conversation.ai_agent_name || 'AI';
+    }
+    if (m.sender === 'lead') {
+      return conversation.lead_name || conversation.lead_phone;
+    }
+    return m.sender;
+  };
+
   return (
     <div className="p-4 space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -117,11 +141,17 @@ export const CustomerConversationPage: React.FC = () => {
 
       <div className="space-y-2">
         <h2 className="text-sm font-semibold text-slate-900">Beskedtråd</h2>
-        {messages.length === 0 ? (
+        {hasMissedCallActivity && (
+          <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Mistet opkald fra {conversation.lead_name || conversation.lead_phone}. AI'en har
+            efterfølgende sendt en SMS til leadet.
+          </div>
+        )}
+        {visibleMessages.length === 0 ? (
           <p className="text-sm text-slate-500 py-4">Ingen beskeder i denne samtale.</p>
         ) : (
           <ul className="space-y-3">
-            {messages.map((m) => (
+            {visibleMessages.map((m) => (
               <li
                 key={m.id}
                 className={`rounded-lg border px-3 py-2 max-w-[85%] ${
@@ -131,7 +161,7 @@ export const CustomerConversationPage: React.FC = () => {
                 }`}
               >
                 <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
-                  <span className="font-medium">{m.sender}</span>
+                  <span className="font-medium">{getSenderLabel(m)}</span>
                   <span>{new Date(m.created_at).toLocaleString('da-DK')}</span>
                 </div>
                 <div className="text-sm text-slate-800 whitespace-pre-wrap break-words">
