@@ -237,6 +237,19 @@ export async function initDb() {
   }
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash) WHERE token_hash IS NOT NULL`);
 
+  // If sessions was created by auth.mjs with token NOT NULL, allow NULL so admin (token_hash-only) inserts work
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'sessions' AND column_name = 'token'
+      ) THEN
+        ALTER TABLE sessions ALTER COLUMN token DROP NOT NULL;
+      END IF;
+    END $$;
+  `);
+
   // Ensure users table has all columns required by auth (role, lockout, reset, etc.).
   // Runs automatically at startup so no separate migration step is required.
   const userColumns = [
