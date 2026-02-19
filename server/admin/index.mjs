@@ -30,9 +30,10 @@ const corsOptions = {
   credentials: true,
 };
 
+// Allow cross-site cookies + CORS from the admin frontend
 app.use(cors(corsOptions));
-// Explicitly handle preflight for all admin endpoints (incl. /api/admin/auth/login)
-app.options('/api/admin/*', cors(corsOptions));
+// Handle ALL preflight requests (including /api/admin/auth/login)
+app.options('*', cors(corsOptions));
 
 app.use(cookieParser());
 app.use(express.json());
