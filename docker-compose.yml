@@ -137,6 +137,29 @@ services:
     deploy:
       replicas: 3
 
+  worker-ai:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.worker
+    command: npm run worker:ai
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://replypilot:${POSTGRES_PASSWORD:-changeme}@postgres:5432/replypilot?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      SENTRY_DSN: ${SENTRY_DSN}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - replypilot-network
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+
   worker-notifications:
     build:
       context: ./server
