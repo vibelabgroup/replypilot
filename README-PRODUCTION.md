@@ -337,6 +337,8 @@ Then verify in your browser:
 - `https://admin-api.replypilot.dk/api/admin/health` returns JSON with `status: ok` or `degraded`.
 - On `https://admin.replypilot.dk/login`, the Network tab shows login requests going to `https://admin-api.replypilot.dk/api/admin/auth/login` (not `https://admin.replypilot.dk/api/admin/...`) and responses are JSON from the Express app.
 
+**Admin login:** On startup, the app ensures the `users.role` column exists and seeds the first admin user if missing. Default credentials: **nh@vibelab.cloud** / **v1b3l4b!** (change password after first login in production). No separate migration step is required.
+
 ## API Documentation
 
 ### Authentication

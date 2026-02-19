@@ -38,6 +38,7 @@ export async function initDb() {
       customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'customer',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -89,6 +90,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS ai_settings (
       id SERIAL PRIMARY KEY,
       customer_id INTEGER UNIQUE NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      agent_name TEXT,
       tone TEXT,
       language TEXT,
       custom_instructions TEXT,
@@ -162,9 +164,48 @@ export async function initDb() {
     $$;
   `);
 
+  // Ensure ai_settings.agent_name exists on existing databases.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'agent_name'
+      ) THEN
+        ALTER TABLE ai_settings
+        ADD COLUMN agent_name TEXT;
+      END IF;
+    END
+    $$;
+  `);
+
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_customers_sms_provider
       ON customers(sms_provider);
+  `);
+
+  // Ensure users.role exists (admin vs customer) and seed first admin user.
+  // Runs automatically at startup so no separate migration step is required.
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'customer';
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_users_role ON users(role) WHERE role = 'admin';
+  `);
+
+  await pool.query(`
+    INSERT INTO customers (email, name)
+    VALUES ('admin@replypilot.dk', 'Replypilot Admin')
+    ON CONFLICT (email) DO NOTHING;
+  `);
+  await pool.query(`
+    INSERT INTO users (customer_id, email, password_hash, role)
+    SELECT c.id, 'nh@vibelab.cloud', '$2a$10$XV6.DkKQldrFugUXPFLyKuUsinXr.lgfkyaXgQLyTeBx5QFDpkG3.', 'admin'
+    FROM customers c
+    WHERE c.email = 'admin@replypilot.dk'
+    ON CONFLICT (email) DO NOTHING;
   `);
 }
 
@@ -214,14 +255,16 @@ export async function upsertAiSettings(customerId, data) {
     `
       INSERT INTO ai_settings (
         customer_id,
+        agent_name,
         tone,
         language,
         custom_instructions,
         max_message_length
       )
-      VALUES ($1, $2, $3, $4, $5)
+      VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT (customer_id) DO UPDATE
       SET
+        agent_name = EXCLUDED.agent_name,
         tone = EXCLUDED.tone,
         language = EXCLUDED.language,
         custom_instructions = EXCLUDED.custom_instructions,
@@ -231,6 +274,7 @@ export async function upsertAiSettings(customerId, data) {
     `,
     [
       customerId,
+      data.agent_name || null,
       data.tone || null,
       data.language || null,
       data.custom_instructions || null,

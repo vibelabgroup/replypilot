@@ -7,6 +7,7 @@ import { authMiddleware, requireAdmin, setSessionCookie, clearSessionCookie } fr
 import { errorHandler, asyncHandler, createUnauthorizedError } from '../middleware/errorHandler.mjs';
 import { login as authLogin, logout as authLogout } from '../services/authService.mjs';
 import { query, checkDbHealth } from '../core/db.mjs';
+import { initDb } from '../db.mjs';
 import { redis } from '../core/redis.mjs';
 import { queueSms } from '../core/sms/gateway.mjs';
 
@@ -298,7 +299,15 @@ app.use('/api/admin', (req, res) => {
 // Central error handler
 app.use(errorHandler);
 
-app.listen(port, () => {
-  logInfo(`Admin API server running on port ${port}`, { port });
-});
+// Ensure schema (including users.role and seed admin user) before accepting traffic
+initDb()
+  .then(() => {
+    app.listen(port, () => {
+      logInfo(`Admin API server running on port ${port}`, { port });
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to initialize database for Admin API', err);
+    process.exit(1);
+  });
 

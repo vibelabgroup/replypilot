@@ -410,6 +410,7 @@ app.put("/api/settings", requireAuth, async (req, res) => {
     };
 
     const aiData = {
+      agent_name: clamp(ai.agent_name, 100),
       tone: clamp(ai.tone, 50),
       language: clamp(ai.language, 20),
       custom_instructions: clamp(ai.custom_instructions, 5000),

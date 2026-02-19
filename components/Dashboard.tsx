@@ -10,9 +10,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     const [companySettings, setCompanySettings] = useState<any | null>(null);
     const [aiSettings, setAiSettings] = useState<any | null>(null);
     const [smsSettings, setSmsSettings] = useState<any | null>(null);
-    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-    const [smsProvider, setSmsProvider] = useState<'twilio' | 'fonecloud'>('twilio');
-    const [fonecloudSenderId, setFonecloudSenderId] = useState<string>('');
     const [activeTab, setActiveTab] = useState<'overview' | 'customers' | 'settings'>('overview');
 
     useEffect(() => {
@@ -35,12 +32,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         };
         fetchSettings();
     }, []);
-
-    const openSettingsModal = () => {
-        setSmsProvider((smsSettings?.provider as 'twilio' | 'fonecloud') || 'twilio');
-        setFonecloudSenderId(smsSettings?.fonecloud_sender_id || '');
-        setIsSettingsModalOpen(true);
-    };
 
     const updateCompanyField = (field: string, value: any) => {
         setCompanySettings((prev: any) => ({
@@ -87,37 +78,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             setSmsSettings(data.sms);
         } catch (err) {
             console.error('Fejl ved gem af indstillinger', err);
-        }
-    };
-
-    const saveSmsSettings = async () => {
-        try {
-            const apiBase =
-                import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
-            const res = await fetch(`${apiBase}/api/settings`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    company: companySettings || {},
-                    ai: aiSettings || {},
-                    sms: {
-                        provider: smsProvider,
-                        fonecloud_sender_id: fonecloudSenderId || null,
-                    },
-                }),
-            });
-
-            if (!res.ok) {
-                console.error('Kunne ikke gemme SMS-indstillinger');
-                return;
-            }
-
-            const data = await res.json();
-            setSmsSettings(data.sms);
-            setIsSettingsModalOpen(false);
-        } catch (err) {
-            console.error('Fejl ved gem af SMS-indstillinger', err);
         }
     };
 
@@ -259,7 +219,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                     <div className="absolute top-0 right-0 w-40 h-40 bg-blue-600 rounded-full blur-[60px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
                                     
                                     <div className="relative z-10">
-                                        <h3 className="font-bold text-lg mb-1">Digital Receptionist</h3>
+                                        <h3 className="font-bold text-lg mb-1">
+                                            {aiSettings?.agent_name
+                                                ? `${aiSettings.agent_name} – AI receptionist`
+                                                : companySettings?.company_name
+                                                    ? `${companySettings.company_name}s AI receptionist`
+                                                    : 'Digital Receptionist'}
+                                        </h3>
                                         <div className="flex items-center gap-2 mb-8">
                                             <span className="relative flex h-2.5 w-2.5">
                                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -289,9 +255,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
                                         <button
                                             className="w-full mt-6 py-3 bg-white/10 hover:bg-white/20 rounded-xl font-medium transition-colors text-sm backdrop-blur-sm border border-white/10 flex items-center justify-center gap-2"
-                                            onClick={openSettingsModal}
+                                            onClick={() => setActiveTab('settings')}
                                         >
-                                            <Settings className="w-4 h-4" /> Konfigurer
+                                            <Settings className="w-4 h-4" /> Konfigurer AI
                                         </button>
                                     </div>
                                 </div>
@@ -453,6 +419,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                </p>
 
                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                   <div className="md:col-span-2">
+                                       <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">
+                                           Navn på AI-assistent
+                                       </label>
+                                       <input
+                                           type="text"
+                                           value={aiSettings?.agent_name || ''}
+                                           onChange={(e) => updateAiField('agent_name', e.target.value)}
+                                           className="w-full h-10 px-3 rounded-lg bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-sm"
+                                           placeholder="Fx Maja, Anna eller Replypilot"
+                                       />
+                                   </div>
                                    <div>
                                        <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">
                                            Tone
@@ -528,7 +506,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                            <div className="bg-black text-white rounded-3xl p-6 shadow-2xl relative overflow-hidden">
                                <div className="absolute top-0 right-0 w-40 h-40 bg-blue-600 rounded-full blur-[60px] opacity-20"></div>
                                <div className="relative z-10">
-                                   <h3 className="font-bold text-lg mb-1">AI Agent status</h3>
+                                   <h3 className="font-bold text-lg mb-1">
+                                       {aiSettings?.agent_name
+                                           ? `${aiSettings.agent_name} – AI agent`
+                                           : companySettings?.company_name
+                                               ? `${companySettings.company_name}s AI agent`
+                                               : 'AI Agent status'}
+                                   </h3>
                                    <p className="text-sm text-slate-300 mb-6">
                                        Din AI receptionist er trænet på dine oplysninger og klar til at tage imod nye kundehenvendelser døgnet rundt.
                                    </p>
