@@ -88,6 +88,7 @@ export const createCheckoutSession = async ({ name, email, phone, priceId }) => 
       subscription_data: {
         trial_period_days: 14, // 14-day free trial
       },
+      allow_promotion_codes: true,
       metadata: {
         email,
         name,
