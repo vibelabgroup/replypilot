@@ -23,14 +23,16 @@ const app = express();
 const port = process.env.ADMIN_API_PORT || 3100;
 
 // CORS configuration – admin frontend only
-const adminFrontendOrigin = process.env.ADMIN_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+const adminFrontendOrigin =
+  process.env.ADMIN_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+const corsOptions = {
+  origin: adminFrontendOrigin,
+  credentials: true,
+};
 
-app.use(
-  cors({
-    origin: adminFrontendOrigin,
-    credentials: true,
-  })
-);
+app.use(cors(corsOptions));
+// Explicitly handle preflight for all admin endpoints (incl. /api/admin/auth/login)
+app.options('/api/admin/*', cors(corsOptions));
 
 app.use(cookieParser());
 app.use(express.json());
