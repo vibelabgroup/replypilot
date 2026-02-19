@@ -297,14 +297,30 @@ export const handleIncomingVoiceDemo = async (payload) => {
       'Skriv en venlig SMS på dansk, hvor du præsenterer virksomheden kort, forklarer at opkaldet blev misset, ' +
       'og beder dem kort skrive hvad de har brug for.';
 
-    // Reuse inbound SMS pipeline so AI auto-responsen, leads og samtaler håndteres ens
-    const result = await applyInboundMessage(client, {
+    // Reuse inbound SMS pipeline so leads, samtaler og notifikationer håndteres ens,
+    // men undgå automatisk AI-svar her – vi bruger en særskilt demo-AI.
+    const result = await applyInboundMessage(
+      client,
+      {
+        customerId,
+        from: From,
+        to: To,
+        body: syntheticBody,
+        providerMessageId: CallSid,
+        twilioNumberId,
+      },
+      { disableAutoResponse: true }
+    );
+
+    // Queue a demo-specific AI job that uses global admin AI-konfiguration
+    await enqueueJob('ai_queue', {
+      type: 'ai_generate_demo',
+      demo: true,
       customerId,
-      from: From,
-      to: To,
-      body: syntheticBody,
-      providerMessageId: CallSid,
-      twilioNumberId,
+      conversationId: result.conversationId,
+      leadMessage: syntheticBody,
+      delayMs: 0,
+      scheduledFor: Date.now(),
     });
 
     return result;

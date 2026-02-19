@@ -722,6 +722,94 @@ app.put(
   })
 );
 
+// Global demo AI configuration (Replypilot's own AI profile)
+app.get(
+  '/api/admin/demo-ai',
+  requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const result = await query(
+      `SELECT key, value FROM system_settings WHERE key LIKE 'demo_ai_%'`,
+      []
+    );
+
+    const map = {};
+    for (const row of result.rows) {
+      map[row.key] = row.value;
+    }
+
+    const response = {
+      agent_name: map['demo_ai_agent_name'] || '',
+      tone: map['demo_ai_tone'] || 'professionel',
+      language: map['demo_ai_language'] || 'da',
+      instructions: map['demo_ai_instructions'] || '',
+      max_tokens: Number.parseInt(map['demo_ai_max_tokens'] || '500', 10) || 500,
+      fallback_message:
+        map['demo_ai_fallback_message'] ||
+        'Tak for dit opkald. Svar gerne på denne SMS med lidt om hvad du har brug for, så vender vi tilbage hurtigst muligt.',
+    };
+
+    res.json(response);
+  })
+);
+
+app.put(
+  '/api/admin/demo-ai',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const {
+      agent_name,
+      tone,
+      language,
+      instructions,
+      max_tokens,
+      fallback_message,
+    } = req.body || {};
+
+    const updates = [
+      ['demo_ai_agent_name', typeof agent_name === 'string' ? agent_name.slice(0, 100) : ''],
+      ['demo_ai_tone', typeof tone === 'string' ? tone.slice(0, 50) : 'professionel'],
+      ['demo_ai_language', language === 'en' ? 'en' : 'da'],
+      [
+        'demo_ai_instructions',
+        typeof instructions === 'string' ? instructions.slice(0, 5000) : '',
+      ],
+      [
+        'demo_ai_max_tokens',
+        (() => {
+          const v =
+            typeof max_tokens === 'number'
+              ? max_tokens
+              : Number.parseInt(String(max_tokens || ''), 10);
+          const clamped = Number.isFinite(v) ? Math.max(50, Math.min(v, 1000)) : 500;
+          return String(clamped);
+        })(),
+      ],
+      [
+        'demo_ai_fallback_message',
+        typeof fallback_message === 'string'
+          ? fallback_message.slice(0, 1000)
+          : 'Tak for dit opkald. Vi vender tilbage hurtigst muligt.',
+      ],
+    ];
+
+    for (const [key, value] of updates) {
+      // eslint-disable-next-line no-await-in-loop
+      await query(
+        `
+          INSERT INTO system_settings (key, value)
+          VALUES ($1, $2)
+          ON CONFLICT (key) DO UPDATE
+          SET value = EXCLUDED.value,
+              updated_at = NOW()
+        `,
+        [key, value]
+      );
+    }
+
+    res.json({ success: true });
+  })
+);
+
 // 404 handler for admin routes
 app.use('/api/admin', (req, res) => {
   res.status(404).json({ error: 'Admin route not found' });

@@ -187,6 +187,179 @@ export const generateResponse = async (customerId, conversationId, leadMessage) 
   }
 };
 
+// Load global demo AI settings from system_settings
+const getDemoAiSettings = async () => {
+  const result = await query(
+    `SELECT key, value FROM system_settings WHERE key LIKE 'demo_ai_%'`,
+    []
+  );
+
+  const map = {};
+  for (const row of result.rows) {
+    map[row.key] = row.value;
+  }
+
+  const agentName = map['demo_ai_agent_name'] || '';
+  const toneRaw = map['demo_ai_tone'] || 'professionel';
+  const language = map['demo_ai_language'] === 'en' ? 'en' : 'da';
+  const instructions = map['demo_ai_instructions'] || '';
+  const maxTokens = Number.parseInt(map['demo_ai_max_tokens'] || '', 10);
+  const fallbackMessage = map['demo_ai_fallback_message'] || null;
+
+  const toneMap = {
+    professionel: 'professional',
+    professional: 'professional',
+    venlig: 'friendly',
+    friendly: 'friendly',
+    uformel: 'casual',
+    casual: 'casual',
+    formel: 'formal',
+    formal: 'formal',
+  };
+
+  const responseTone = toneMap[toneRaw] || 'professional';
+
+  const base = getDefaultAiSettings();
+
+  const systemPromptParts = [getDefaultSystemPrompt()];
+  if (agentName) {
+    systemPromptParts.unshift(
+      `Du er en AI-receptionist ved navn ${agentName}.`
+    );
+  }
+  if (instructions) {
+    systemPromptParts.push(
+      `Særlige instruktioner fra virksomheden:\n${instructions}`
+    );
+  }
+
+  return {
+    system_prompt: systemPromptParts.join('\n\n'),
+    temperature: base.temperature,
+    max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : base.max_tokens,
+    response_tone: responseTone,
+    language,
+    enable_greetings: true,
+    greeting_template: null,
+    enable_closings: true,
+    closing_template: null,
+    auto_response_enabled: true,
+    auto_response_delay_seconds: 0,
+    working_hours_only: false,
+    fallback_message:
+      fallbackMessage ||
+      'Tak for dit opkald. Svar gerne på denne SMS med lidt om hvad du har brug for, så vender vi tilbage hurtigst muligt.',
+  };
+};
+
+// Generate AI response for demo flow using global admin settings
+const generateDemoResponse = async (conversationId, leadMessage) => {
+  checkCircuitBreaker();
+
+  try {
+    const aiSettings = await getDemoAiSettings();
+
+    // Get conversation history (last 5 messages)
+    const historyResult = await query(
+      `SELECT sender, content, created_at
+       FROM messages
+       WHERE conversation_id = $1
+       ORDER BY created_at DESC
+       LIMIT 5`,
+      [conversationId]
+    );
+
+    const history = historyResult.rows.reverse();
+
+    // Build system prompt
+    const systemPrompt = buildSystemPrompt(aiSettings);
+
+    const messages = [
+      {
+        role: 'system',
+        parts: [{ text: systemPrompt }],
+      },
+    ];
+
+    for (const msg of history) {
+      const role = msg.sender === 'lead' ? 'user' : 'model';
+      messages.push({
+        role,
+        parts: [{ text: msg.content }],
+      });
+    }
+
+    messages.push({
+      role: 'user',
+      parts: [{ text: leadMessage }],
+    });
+
+    let response;
+    let lastError;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        logDebug('Calling Gemini API (demo)', { conversationId, attempt });
+
+        const result = await genAI.models.generateContent({
+          model: 'gemini-pro',
+          contents: messages,
+          config: {
+            temperature: aiSettings.temperature,
+            maxOutputTokens: aiSettings.max_tokens,
+          },
+        });
+
+        response = result.response.text();
+        recordSuccess();
+        break;
+      } catch (error) {
+        lastError = error;
+        logError('Gemini API call failed (demo)', {
+          attempt,
+          error: error.message,
+        });
+
+        if (attempt < MAX_RETRIES) {
+          await sleep(RETRY_DELAY_MS * Math.pow(2, attempt - 1));
+        }
+      }
+    }
+
+    if (!response) {
+      recordFailure();
+      throw lastError || new Error('Failed to generate demo AI response');
+    }
+
+    response = response.trim();
+
+    if (history.length === 0 && aiSettings.greeting_template) {
+      response = `${aiSettings.greeting_template}\n\n${response}`;
+    }
+
+    return {
+      success: true,
+      response,
+      aiSettings,
+    };
+  } catch (error) {
+    logError('Demo AI generation failed', {
+      error: error.message,
+    });
+
+    const fallback =
+      (await getDemoAiSettings()).fallback_message ||
+      'Tak for dit opkald. Vi har desværre tekniske problemer lige nu, men vender tilbage hurtigst muligt.';
+
+    return {
+      success: false,
+      response: fallback,
+      error: error.message,
+      isFallback: true,
+    };
+  }
+};
+
 // Queue AI response generation
 export const queueAIResponse = async (customerId, conversationId, leadMessage, delayMs = 30000) => {
   await enqueueJob('ai_queue', {
@@ -268,9 +441,11 @@ const getFallbackMessage = async (customerId) => {
 
 // Process AI generation job (for workers)
 export const processAIGenerationJob = async (job) => {
-  const { customerId, conversationId, leadMessage } = job;
+  const { customerId, conversationId, leadMessage, demo } = job;
 
-  const result = await generateResponse(customerId, conversationId, leadMessage);
+  const result = demo
+    ? await generateDemoResponse(conversationId, leadMessage)
+    : await generateResponse(customerId, conversationId, leadMessage);
 
   if (result.success) {
     // Store AI response

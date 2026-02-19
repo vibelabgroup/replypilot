@@ -19,6 +19,14 @@ export const SystemStatusPage: React.FC = () => {
   const [defaultProvider, setDefaultProvider] = useState<'twilio' | 'fonecloud'>('twilio');
   const [savingDefault, setSavingDefault] = useState(false);
   const [defaultError, setDefaultError] = useState<string | null>(null);
+  const [demoAgentName, setDemoAgentName] = useState('');
+  const [demoTone, setDemoTone] = useState('professionel');
+  const [demoLanguage, setDemoLanguage] = useState<'da' | 'en'>('da');
+  const [demoMaxTokens, setDemoMaxTokens] = useState<number | ''>('');
+  const [demoInstructions, setDemoInstructions] = useState('');
+  const [demoFallback, setDemoFallback] = useState('');
+  const [savingDemoAi, setSavingDemoAi] = useState(false);
+  const [demoAiError, setDemoAiError] = useState<string | null>(null);
 
   const apiBase =
     import.meta.env.VITE_ADMIN_API_BASE_URL || 'https://admin-api.replypilot.dk';
@@ -27,9 +35,10 @@ export const SystemStatusPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [healthRes, defaultRes] = await Promise.all([
+      const [healthRes, defaultRes, demoAiRes] = await Promise.all([
         fetch(`${apiBase}/api/admin/health`),
         fetch(`${apiBase}/api/admin/sms-default`, { credentials: 'include' }),
+        fetch(`${apiBase}/api/admin/demo-ai`, { credentials: 'include' }),
       ]);
 
       if (!healthRes.ok) {
@@ -44,10 +53,55 @@ export const SystemStatusPage: React.FC = () => {
           setDefaultProvider(json.provider);
         }
       }
+
+      if (demoAiRes.ok) {
+        const demo = await demoAiRes.json();
+        if (demo) {
+          setDemoAgentName(demo.agent_name || '');
+          setDemoTone(demo.tone || 'professionel');
+          setDemoLanguage(demo.language === 'en' ? 'en' : 'da');
+          setDemoMaxTokens(
+            typeof demo.max_tokens === 'number'
+              ? demo.max_tokens
+              : parseInt(String(demo.max_tokens || ''), 10) || 500
+          );
+          setDemoInstructions(demo.instructions || '');
+          setDemoFallback(demo.fallback_message || '');
+        }
+      }
     } catch (err: any) {
       setError(err?.message || 'Uventet fejl');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveDemoAi = async () => {
+    setSavingDemoAi(true);
+    setDemoAiError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/admin/demo-ai`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          agent_name: demoAgentName,
+          tone: demoTone,
+          language: demoLanguage,
+          instructions: demoInstructions,
+          max_tokens:
+            typeof demoMaxTokens === 'number' ? demoMaxTokens : Number(demoMaxTokens || 0),
+          fallback_message: demoFallback,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || 'Kunne ikke gemme demo-AI-indstillinger');
+      }
+    } catch (err: any) {
+      setDemoAiError(err?.message || 'Uventet fejl ved gem af demo-AI-indstillinger');
+    } finally {
+      setSavingDemoAi(false);
     }
   };
 
@@ -202,6 +256,124 @@ export const SystemStatusPage: React.FC = () => {
                 {defaultError}
               </p>
             )}
+          </div>
+
+          <div className="rounded-xl border bg-white p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Replypilot demo AI (egen receptionist)
+                </h2>
+                <p className="text-xs text-slate-600">
+                  Styr hvordan AI&apos;en opfører sig, når nogen ringer til jeres eget
+                  demonummer og får et SMS-svar.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Agentnavn
+                </label>
+                <input
+                  type="text"
+                  value={demoAgentName}
+                  onChange={(e) => setDemoAgentName(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                  placeholder="Fx Replypilot, Maja eller Anna"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Tone
+                </label>
+                <select
+                  value={demoTone}
+                  onChange={(e) => setDemoTone(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                >
+                  <option value="professionel">Professionel</option>
+                  <option value="venlig">Venlig</option>
+                  <option value="uformel">Uformel</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Sprog
+                </label>
+                <select
+                  value={demoLanguage}
+                  onChange={(e) =>
+                    setDemoLanguage(e.target.value === 'en' ? 'en' : 'da')
+                  }
+                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                >
+                  <option value="da">Dansk</option>
+                  <option value="en">Engelsk</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Maks. længde (tokens)
+                </label>
+                <input
+                  type="number"
+                  min={50}
+                  max={1000}
+                  value={demoMaxTokens}
+                  onChange={(e) =>
+                    setDemoMaxTokens(
+                      e.target.value
+                        ? Math.min(1000, Math.max(50, Number(e.target.value)))
+                        : ''
+                    )
+                  }
+                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Instruktioner til demo-AI&apos;en
+                </label>
+                <textarea
+                  value={demoInstructions}
+                  onChange={(e) => setDemoInstructions(e.target.value)}
+                  className="w-full min-h-[90px] rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 resize-y"
+                  placeholder="Beskriv hvad Replypilot gør, typiske henvendelser og hvordan AI'en skal svare i demoen."
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Fallback-besked
+                </label>
+                <textarea
+                  value={demoFallback}
+                  onChange={(e) => setDemoFallback(e.target.value)}
+                  className="w-full min-h-[90px] rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 resize-y"
+                  placeholder="Besked der sendes, hvis AI-svaret fejler."
+                />
+              </div>
+            </div>
+
+            {demoAiError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-md px-2 py-1.5">
+                {demoAiError}
+              </p>
+            )}
+
+            <div className="flex justify-end">
+              <button
+                onClick={handleSaveDemoAi}
+                disabled={savingDemoAi}
+                className="inline-flex items-center rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                {savingDemoAi ? 'Gemmer…' : 'Gem demo-AI'}
+              </button>
+            </div>
           </div>
         </div>
       )}

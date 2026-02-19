@@ -25,7 +25,8 @@ import { logInfo, logError } from '../utils/logger.mjs';
  */
 export const applyInboundMessage = async (
   client,
-  { customerId, from, to, body, providerMessageId, twilioNumberId = null, fonecloudNumberId = null }
+  { customerId, from, to, body, providerMessageId, twilioNumberId = null, fonecloudNumberId = null },
+  options = {}
 ) => {
   logInfo('Applying inbound SMS message', {
     customerId,
@@ -91,6 +92,8 @@ export const applyInboundMessage = async (
     [conversationId]
   );
 
+  const { disableAutoResponse = false } = options || {};
+
   // Queue AI response if auto-response is enabled
   const aiSettings = await client.query(
     `SELECT auto_response_enabled, auto_response_delay_seconds
@@ -99,7 +102,7 @@ export const applyInboundMessage = async (
     [customerId]
   );
 
-  if (aiSettings.rowCount > 0 && aiSettings.rows[0].auto_response_enabled) {
+  if (!disableAutoResponse && aiSettings.rowCount > 0 && aiSettings.rows[0].auto_response_enabled) {
     await enqueueJob('ai_queue', {
       type: 'ai_generate',
       customerId,
