@@ -87,6 +87,8 @@ export async function initDb() {
       id SERIAL PRIMARY KEY,
       customer_id INTEGER UNIQUE NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
       company_name TEXT,
+      website TEXT,
+      industry TEXT,
       phone_number TEXT,
       address TEXT,
       opening_hours JSONB,
@@ -134,6 +136,65 @@ export async function initDb() {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS twilio_numbers (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      phone_number TEXT NOT NULL,
+      twilio_sid TEXT,
+      twilio_friendly_name TEXT,
+      monthly_cost NUMERIC(10,2) DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      twilio_number_id INTEGER REFERENCES twilio_numbers(id) ON DELETE SET NULL,
+      lead_name TEXT,
+      lead_phone TEXT NOT NULL,
+      lead_email TEXT,
+      lead_source TEXT DEFAULT 'sms',
+      status TEXT NOT NULL DEFAULT 'active',
+      last_message_at TIMESTAMPTZ,
+      message_count INTEGER NOT NULL DEFAULT 0,
+      ai_response_count INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id SERIAL PRIMARY KEY,
+      conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      direction TEXT NOT NULL,
+      sender TEXT NOT NULL,
+      content TEXT NOT NULL,
+      twilio_message_sid TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
+      name TEXT,
+      phone TEXT,
+      email TEXT,
+      source TEXT DEFAULT 'sms',
+      qualification TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   // Ensure SMS multi-provider columns exist on existing databases as well.
   // This mirrors the logic in migrations/002_sms_multi_provider.sql but runs
   // automatically at startup so the code works without manual migration steps.
@@ -174,6 +235,12 @@ export async function initDb() {
       END IF;
     END
     $$;
+  `);
+
+  // Ensure company_settings has website and industry (used by admin customer detail).
+  await pool.query(`
+    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS website TEXT;
+    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS industry TEXT;
   `);
 
   // Ensure ai_settings.agent_name exists on existing databases.
