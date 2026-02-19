@@ -24,7 +24,13 @@ export async function initDb() {
       name TEXT,
       phone TEXT,
       stripe_customer_id TEXT UNIQUE,
-      -- Default SMS provider configuration (multi-provider support)
+      stripe_subscription_id TEXT UNIQUE,
+      status TEXT NOT NULL DEFAULT 'trial',
+      subscription_status TEXT NOT NULL DEFAULT 'trialing',
+      current_period_start TIMESTAMPTZ,
+      current_period_end TIMESTAMPTZ,
+      cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
+      trial_end TIMESTAMPTZ,
       sms_provider VARCHAR(50) NOT NULL DEFAULT 'twilio',
       fonecloud_sender_id VARCHAR(50),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -191,6 +197,45 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_customers_sms_provider
       ON customers(sms_provider);
   `);
+
+  // Ensure customers table has status/subscription columns (used by auth and admin).
+  const customerColumns = [
+    ['status', 'TEXT NOT NULL DEFAULT \'trial\''],
+    ['subscription_status', 'TEXT NOT NULL DEFAULT \'trialing\''],
+    ['current_period_start', 'TIMESTAMPTZ'],
+    ['current_period_end', 'TIMESTAMPTZ'],
+    ['stripe_subscription_id', 'TEXT UNIQUE'],
+    ['cancel_at_period_end', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+    ['trial_end', 'TIMESTAMPTZ'],
+  ];
+  for (const [col, def] of customerColumns) {
+    await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS ${col} ${def}`);
+  }
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_customers_status ON customers(status)`);
+
+  // Sessions table (used by auth middleware: token_hash, revoked, etc.)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT UNIQUE NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      ip_address INET,
+      user_agent TEXT,
+      revoked BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  const sessionColumns = [
+    ['token_hash', 'TEXT UNIQUE'],
+    ['ip_address', 'INET'],
+    ['user_agent', 'TEXT'],
+    ['revoked', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+  ];
+  for (const [col, def] of sessionColumns) {
+    await pool.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ${col} ${def}`);
+  }
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash) WHERE token_hash IS NOT NULL`);
 
   // Ensure users table has all columns required by auth (role, lockout, reset, etc.).
   // Runs automatically at startup so no separate migration step is required.
