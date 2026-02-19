@@ -11,6 +11,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     const [aiSettings, setAiSettings] = useState<any | null>(null);
     const [smsSettings, setSmsSettings] = useState<any | null>(null);
     const [activeTab, setActiveTab] = useState<'overview' | 'customers' | 'settings'>('overview');
+    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    const [smsProvider, setSmsProvider] = useState<'twilio' | 'fonecloud'>('twilio');
+    const [fonecloudSenderId, setFonecloudSenderId] = useState('');
 
     useEffect(() => {
         const fetchSettings = async () => {
@@ -25,6 +28,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                     setCompanySettings(data.company);
                     setAiSettings(data.ai);
                     setSmsSettings(data.sms);
+                    if (data.sms) {
+                        setSmsProvider((data.sms.provider === 'fonecloud' ? 'fonecloud' : 'twilio'));
+                        setFonecloudSenderId(data.sms.fonecloud_sender_id || '');
+                    }
                 }
             } catch (err) {
                 console.warn('Kunne ikke hente indstillinger', err);
@@ -78,6 +85,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             setSmsSettings(data.sms);
         } catch (err) {
             console.error('Fejl ved gem af indstillinger', err);
+        }
+    };
+
+    const saveSmsSettings = async () => {
+        try {
+            const apiBase =
+                import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+            const res = await fetch(`${apiBase}/api/settings`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    company: companySettings || {},
+                    ai: aiSettings || {},
+                    sms: {
+                        provider: smsProvider,
+                        fonecloud_sender_id: smsProvider === 'fonecloud' ? fonecloudSenderId : undefined,
+                    },
+                }),
+            });
+            if (!res.ok) {
+                console.error('Kunne ikke gemme SMS-indstillinger');
+                return;
+            }
+            const data = await res.json();
+            setSmsSettings(data.sms);
+            setIsSettingsModalOpen(false);
+        } catch (err) {
+            console.error('Fejl ved gem af SMS-indstillinger', err);
         }
     };
 
