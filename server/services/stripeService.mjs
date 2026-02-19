@@ -86,7 +86,7 @@ export const createCheckoutSession = async ({ name, email, phone, priceId }) => 
       success_url: `${process.env.FRONTEND_URL}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.FRONTEND_URL}/?checkout=cancelled`,
       subscription_data: {
-        trial_period_days: 14, // 14-day free trial
+        trial_period_days: 7, // 7-day free trial before first payment
       },
       allow_promotion_codes: true,
       metadata: {
