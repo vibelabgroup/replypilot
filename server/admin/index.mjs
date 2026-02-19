@@ -22,11 +22,29 @@ import {
 const app = express();
 const port = process.env.ADMIN_API_PORT || 3100;
 
-// CORS configuration – admin frontend only
-const adminFrontendOrigin =
-  process.env.ADMIN_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+// CORS configuration – allow admin frontend and main app frontend
+// We support multiple allowed origins so that minor env misconfigurations
+// (or multiple frontends hitting the admin API) don't immediately cause CORS failures.
+const adminFrontendOrigin = process.env.ADMIN_FRONTEND_URL || 'http://localhost:5173';
+const mainFrontendOrigin = process.env.FRONTEND_URL || null;
+
+const allowedOrigins = [adminFrontendOrigin, mainFrontendOrigin].filter(Boolean);
+
 const corsOptions = {
-  origin: adminFrontendOrigin,
+  origin: (origin, callback) => {
+    // Allow non-browser / same-origin requests with no Origin header
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // In production this will result in a CORS failure in the browser,
+    // but we avoid crashing the server.
+    return callback(null, false);
+  },
   credentials: true,
 };
 
