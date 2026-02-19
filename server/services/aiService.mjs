@@ -119,7 +119,7 @@ export const generateResponse = async (customerId, conversationId, leadMessage) 
         logDebug('Calling Gemini API', { customerId, conversationId, attempt });
 
         const result = await genAI.models.generateContent({
-          model: 'gemini-1.5-flash',
+          model: 'gemini-3-flash-preview',
           contents: messages,
           config: {
             temperature: aiSettings.temperature,
@@ -302,7 +302,7 @@ const generateDemoResponse = async (conversationId, leadMessage) => {
         logDebug('Calling Gemini API (demo)', { conversationId, attempt });
 
         const result = await genAI.models.generateContent({
-          model: 'gemini-1.5-flash',
+          model: 'gemini-3-flash-preview',
           contents: messages,
           config: {
             temperature: aiSettings.temperature,
