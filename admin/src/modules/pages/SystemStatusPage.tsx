@@ -10,6 +10,7 @@ type HealthResponse = {
   };
   stripe: { configured: boolean; healthy: boolean; error?: string };
   gemini: { configured: boolean; healthy: boolean; error?: string };
+  groq?: { configured: boolean; healthy: boolean; error?: string };
 };
 
 export const SystemStatusPage: React.FC = () => {
@@ -218,6 +219,17 @@ export const SystemStatusPage: React.FC = () => {
                   : data.gemini.error || 'Fejl ved Gemini API-kald'
               }
             />
+            {data.groq && (
+              <StatusCard
+                title="Groq"
+                healthy={data.groq.configured && data.groq.healthy}
+                description={
+                  !data.groq.configured
+                    ? 'GROQ_API_KEY mangler (valgfri, free tier)'
+                    : 'Groq API konfigureret'
+                }
+              />
+            )}
           </div>
 
           <div className="rounded-xl border bg-white p-4 flex flex-col gap-3">

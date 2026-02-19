@@ -318,9 +318,9 @@ app.patch(
           ? Math.max(50, Math.min(max_message_length, 500))
           : null,
       primary_provider:
-        primary_provider === 'openai' ? 'openai' : 'gemini',
+        primary_provider === 'openai' ? 'openai' : primary_provider === 'groq' ? 'groq' : 'gemini',
       secondary_provider:
-        secondary_provider === 'openai' || secondary_provider === 'gemini'
+        secondary_provider === 'openai' || secondary_provider === 'gemini' || secondary_provider === 'groq'
           ? secondary_provider
           : null,
     };
@@ -698,15 +698,18 @@ app.get(
       }
     }
 
-    // Gemini / AI health – warm path check
+    // Gemini / AI health – warm path check (only when no other provider to avoid circuit breaker)
     const gemini = {
       configured: !!process.env.GEMINI_API_KEY,
       healthy: false,
     };
+    const groq = {
+      configured: !!process.env.GROQ_API_KEY,
+      healthy: !!process.env.GROQ_API_KEY,
+    };
 
     if (gemini.configured) {
       try {
-        // Minimal, non-persistent test call
         const testCustomerId = -1;
         const testConversationId = -1;
         await generateResponse(testCustomerId, testConversationId, '[HEALTHCHECK] Check-in');
@@ -724,6 +727,7 @@ app.get(
       sms: smsProviders,
       stripe: stripeStatus,
       gemini,
+      groq,
     });
   })
 );
@@ -844,11 +848,11 @@ app.put(
       ],
       [
         'demo_ai_primary_provider',
-        primary_provider === 'openai' ? 'openai' : 'gemini',
+        primary_provider === 'openai' ? 'openai' : primary_provider === 'groq' ? 'groq' : 'gemini',
       ],
       [
         'demo_ai_secondary_provider',
-        secondary_provider === 'openai' || secondary_provider === 'gemini'
+        secondary_provider === 'openai' || secondary_provider === 'gemini' || secondary_provider === 'groq'
           ? secondary_provider
           : '',
       ],

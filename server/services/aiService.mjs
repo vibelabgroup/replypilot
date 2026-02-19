@@ -3,8 +3,12 @@ import { query } from '../utils/db.mjs';
 import { logInfo, logError, logDebug } from '../utils/logger.mjs';
 import { enqueueJob } from '../utils/redis.mjs';
 
-const apiKey = process.env.GEMINI_API_KEY;
-const genAI = apiKey ? new GoogleGenAI({ apiKey }) : null;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const genAI = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+
+const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 
 // Circuit breaker state
 const circuitBreaker = {
@@ -56,21 +60,88 @@ const recordFailure = () => {
   }
 };
 
+// Convert internal messages (role + parts[].text) to OpenAI/Groq format (role + content string)
+const toOpenAIMessages = (messages) =>
+  messages.map((m) => ({
+    role: m.role === 'model' ? 'assistant' : m.role,
+    content: (m.parts || []).map((p) => p.text).filter(Boolean).join('\n') || '',
+  }));
+
+// Call Groq (OpenAI-compatible API)
+const callGroq = async (messages, aiSettings) => {
+  if (!GROQ_API_KEY) {
+    throw new Error('Groq API key not configured');
+  }
+  const body = {
+    model: GROQ_MODEL,
+    messages: toOpenAIMessages(messages),
+    max_tokens: aiSettings.max_tokens || 500,
+    temperature: Math.min(1, Math.max(0, Number(aiSettings.temperature) || 0.7)),
+  };
+  const res = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${GROQ_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Groq API error ${res.status}: ${err}`);
+  }
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (text == null) {
+    throw new Error('Groq API returned no content');
+  }
+  return String(text).trim();
+};
+
+// Call Gemini
+const callGemini = async (messages, aiSettings) => {
+  if (!genAI) {
+    throw new Error('Gemini API key not configured');
+  }
+  const result = await genAI.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: messages,
+    config: {
+      temperature: aiSettings.temperature,
+      maxOutputTokens: aiSettings.max_tokens,
+    },
+  });
+  return result.response.text().trim();
+};
+
 // Generate AI response
 export const generateResponse = async (customerId, conversationId, leadMessage) => {
   checkCircuitBreaker();
 
   try {
-    // Get customer AI settings
+    // Get customer AI settings (include provider order)
     const aiSettingsResult = await query(
       `SELECT system_prompt, temperature, max_tokens, response_tone, 
-              language, greeting_template, closing_template, fallback_message
+              language, greeting_template, closing_template, fallback_message,
+              primary_provider, secondary_provider
        FROM ai_settings
        WHERE customer_id = $1`,
       [customerId]
     );
 
     const aiSettings = aiSettingsResult.rows[0] || getDefaultAiSettings();
+    const primary = (aiSettings.primary_provider || 'gemini').toLowerCase();
+    const secondary = (aiSettings.secondary_provider || '').toLowerCase();
+    const providersToTry = [];
+    if (primary && (primary === 'gemini' ? GEMINI_API_KEY : primary === 'groq' && GROQ_API_KEY)) {
+      providersToTry.push(primary);
+    }
+    if (secondary && secondary !== primary && (secondary === 'gemini' ? GEMINI_API_KEY : secondary === 'groq' && GROQ_API_KEY)) {
+      providersToTry.push(secondary);
+    }
+    if (providersToTry.length === 0) {
+      throw new Error('No AI provider configured (set GEMINI_API_KEY and/or GROQ_API_KEY)');
+    }
 
     // Get conversation history (last 5 messages)
     const historyResult = await query(
@@ -110,38 +181,36 @@ export const generateResponse = async (customerId, conversationId, leadMessage) 
       parts: [{ text: leadMessage }],
     });
 
-    // Call Gemini with retries
+    // Try each configured provider (primary then secondary) with retries
     let response;
     let lastError;
 
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        logDebug('Calling Gemini API', { customerId, conversationId, attempt });
-
-        const result = await genAI.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: messages,
-          config: {
-            temperature: aiSettings.temperature,
-            maxOutputTokens: aiSettings.max_tokens,
-          },
-        });
-
-        response = result.response.text();
-        recordSuccess();
-        break;
-      } catch (error) {
-        lastError = error;
-        logError('Gemini API call failed', {
-          attempt,
-          customerId,
-          error: error.message,
-        });
-
-        if (attempt < MAX_RETRIES) {
-          await sleep(RETRY_DELAY_MS * Math.pow(2, attempt - 1));
+    for (const provider of providersToTry) {
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          logDebug(`Calling ${provider} API`, { customerId, conversationId, attempt });
+          if (provider === 'gemini') {
+            response = await callGemini(messages, aiSettings);
+          } else if (provider === 'groq') {
+            response = await callGroq(messages, aiSettings);
+          } else {
+            continue;
+          }
+          recordSuccess();
+          break;
+        } catch (error) {
+          lastError = error;
+          logError(`${provider} API call failed`, {
+            attempt,
+            customerId,
+            error: error.message,
+          });
+          if (attempt < MAX_RETRIES) {
+            await sleep(RETRY_DELAY_MS * Math.pow(2, attempt - 1));
+          }
         }
       }
+      if (response) break;
     }
 
     if (!response) {
@@ -149,8 +218,7 @@ export const generateResponse = async (customerId, conversationId, leadMessage) 
       throw lastError || new Error('Failed to generate AI response');
     }
 
-    // Clean up response
-    response = response.trim();
+    // response already trimmed by callGemini/callGroq
 
     // Add greeting if first message in conversation and enabled
     if (history.length === 0 && aiSettings.greeting_template) {
@@ -233,6 +301,9 @@ const getDemoAiSettings = async () => {
     );
   }
 
+  const primaryProvider = (map['demo_ai_primary_provider'] || 'gemini').toLowerCase();
+  const secondaryProvider = (map['demo_ai_secondary_provider'] || '').toLowerCase();
+
   return {
     system_prompt: systemPromptParts.join('\n\n'),
     temperature: base.temperature,
@@ -249,6 +320,8 @@ const getDemoAiSettings = async () => {
     fallback_message:
       fallbackMessage ||
       'Tak for dit opkald. Svar gerne på denne SMS med lidt om hvad du har brug for, så vender vi tilbage hurtigst muligt.',
+    primary_provider: primaryProvider === 'groq' ? 'groq' : 'gemini',
+    secondary_provider: secondaryProvider === 'groq' || secondaryProvider === 'gemini' ? secondaryProvider : '',
   };
 };
 
@@ -258,6 +331,18 @@ const generateDemoResponse = async (conversationId, leadMessage) => {
 
   try {
     const aiSettings = await getDemoAiSettings();
+    const primary = (aiSettings.primary_provider || 'gemini').toLowerCase();
+    const secondary = (aiSettings.secondary_provider || '').toLowerCase();
+    const providersToTry = [];
+    if (primary && (primary === 'gemini' ? GEMINI_API_KEY : primary === 'groq' && GROQ_API_KEY)) {
+      providersToTry.push(primary);
+    }
+    if (secondary && secondary !== primary && (secondary === 'gemini' ? GEMINI_API_KEY : secondary === 'groq' && GROQ_API_KEY)) {
+      providersToTry.push(secondary);
+    }
+    if (providersToTry.length === 0) {
+      throw new Error('No AI provider configured for demo');
+    }
 
     // Get conversation history (last 5 messages)
     const historyResult = await query(
@@ -297,41 +382,37 @@ const generateDemoResponse = async (conversationId, leadMessage) => {
     let response;
     let lastError;
 
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        logDebug('Calling Gemini API (demo)', { conversationId, attempt });
-
-        const result = await genAI.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: messages,
-          config: {
-            temperature: aiSettings.temperature,
-            maxOutputTokens: aiSettings.max_tokens,
-          },
-        });
-
-        response = result.response.text();
-        recordSuccess();
-        break;
-      } catch (error) {
-        lastError = error;
-        logError('Gemini API call failed (demo)', {
-          attempt,
-          error: error.message,
-        });
-
-        if (attempt < MAX_RETRIES) {
-          await sleep(RETRY_DELAY_MS * Math.pow(2, attempt - 1));
+    for (const provider of providersToTry) {
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          logDebug(`Calling ${provider} API (demo)`, { conversationId, attempt });
+          if (provider === 'gemini') {
+            response = await callGemini(messages, aiSettings);
+          } else if (provider === 'groq') {
+            response = await callGroq(messages, aiSettings);
+          } else {
+            continue;
+          }
+          recordSuccess();
+          break;
+        } catch (error) {
+          lastError = error;
+          logError(`${provider} API call failed (demo)`, {
+            attempt,
+            error: error.message,
+          });
+          if (attempt < MAX_RETRIES) {
+            await sleep(RETRY_DELAY_MS * Math.pow(2, attempt - 1));
+          }
         }
       }
+      if (response) break;
     }
 
     if (!response) {
       recordFailure();
       throw lastError || new Error('Failed to generate demo AI response');
     }
-
-    response = response.trim();
 
     if (history.length === 0 && aiSettings.greeting_template) {
       response = `${aiSettings.greeting_template}\n\n${response}`;
@@ -424,6 +505,8 @@ const getDefaultAiSettings = () => ({
   greeting_template: null,
   closing_template: null,
   fallback_message: null,
+  primary_provider: 'gemini',
+  secondary_provider: null,
 });
 
 // Get fallback message

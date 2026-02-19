@@ -97,8 +97,8 @@ export const CustomerDetailPage: React.FC = () => {
   const [aiMaxLength, setAiMaxLength] = useState<number | ''>('');
   const [aiInstructions, setAiInstructions] = useState('');
   const [savingAi, setSavingAi] = useState(false);
-  const [aiPrimaryProvider, setAiPrimaryProvider] = useState<'gemini' | 'openai'>('gemini');
-  const [aiSecondaryProvider, setAiSecondaryProvider] = useState<'' | 'gemini' | 'openai'>('');
+  const [aiPrimaryProvider, setAiPrimaryProvider] = useState<'gemini' | 'openai' | 'groq'>('gemini');
+  const [aiSecondaryProvider, setAiSecondaryProvider] = useState<'' | 'gemini' | 'openai' | 'groq'>('');
 
   const apiBase =
     import.meta.env.VITE_ADMIN_API_BASE_URL || 'https://admin-api.replypilot.dk';
@@ -127,11 +127,10 @@ export const CustomerDetailPage: React.FC = () => {
           : ''
       );
       setAiInstructions(data.customer.ai_custom_instructions || '');
-      // Default primary to gemini if not explicitly set
-      const primary = (data as any).customer.primary_provider as 'gemini' | 'openai' | undefined;
-      const secondary = (data as any).customer.secondary_provider as 'gemini' | 'openai' | undefined;
-      setAiPrimaryProvider(primary === 'openai' ? 'openai' : 'gemini');
-      setAiSecondaryProvider(secondary === 'gemini' || secondary === 'openai' ? secondary : '');
+      const primary = (data as any).customer.primary_provider as 'gemini' | 'openai' | 'groq' | undefined;
+      const secondary = (data as any).customer.secondary_provider as 'gemini' | 'openai' | 'groq' | undefined;
+      setAiPrimaryProvider(primary === 'openai' ? 'openai' : primary === 'groq' ? 'groq' : 'gemini');
+      setAiSecondaryProvider(secondary === 'gemini' || secondary === 'openai' || secondary === 'groq' ? secondary : '');
     } catch (err: any) {
       setError(err?.message || 'Uventet fejl');
     } finally {
@@ -606,13 +605,15 @@ export const CustomerDetailPage: React.FC = () => {
               </label>
               <select
                 value={aiPrimaryProvider}
-                onChange={(e) =>
-                  setAiPrimaryProvider(e.target.value === 'openai' ? 'openai' : 'gemini')
-                }
+                onChange={(e) => {
+                  const v = e.target.value as 'gemini' | 'openai' | 'groq';
+                  setAiPrimaryProvider(v === 'openai' ? 'openai' : v === 'groq' ? 'groq' : 'gemini');
+                }}
                 className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
               >
                 <option value="gemini">Gemini</option>
                 <option value="openai">OpenAI</option>
+                <option value="groq">Groq (free tier)</option>
               </select>
             </div>
             <div>
@@ -622,7 +623,7 @@ export const CustomerDetailPage: React.FC = () => {
               <select
                 value={aiSecondaryProvider}
                 onChange={(e) => {
-                  const v = e.target.value as '' | 'gemini' | 'openai';
+                  const v = e.target.value as '' | 'gemini' | 'openai' | 'groq';
                   setAiSecondaryProvider(v);
                 }}
                 className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
@@ -630,6 +631,7 @@ export const CustomerDetailPage: React.FC = () => {
                 <option value="">Ingen</option>
                 <option value="gemini">Gemini</option>
                 <option value="openai">OpenAI</option>
+                <option value="groq">Groq (free tier)</option>
               </select>
             </div>
           </div>
