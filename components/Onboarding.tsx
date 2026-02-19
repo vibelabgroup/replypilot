@@ -712,32 +712,71 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         }
     };
 
-    const renderStep4 = () => (
+    const renderStep4 = () => {
+        const hasPhoneNumber = !!twilioNumber;
+
+        return (
         <div className="text-center space-y-6 animate-in fade-in zoom-in duration-500">
              <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 text-green-600 shadow-xl shadow-green-100/50 relative">
                  <CheckCircle2 className="w-12 h-12" />
                  <div className="absolute inset-0 bg-green-400 rounded-full opacity-20 animate-ping"></div>
              </div>
              <div>
-                <h2 className="text-3xl font-bold text-slate-900 mb-2">Tillykke! Alt er klar.</h2>
+                <h2 className="text-3xl font-bold text-slate-900 mb-2">
+                    {hasPhoneNumber ? 'Tillykke! Alt er klar.' : 'Tillykke! Din AI er under træning.'}
+                </h2>
                 <p className="text-slate-500 max-w-md mx-auto">
-                    {data.assistantName} er nu trænet på din hjemmeside og klar til at tage imod opkald.
+                    {hasPhoneNumber
+                        ? `${data.assistantName || 'Din AI-assistent'} er nu trænet på din hjemmeside og klar til at tage imod opkald.`
+                        : 'Din betaling er gennemført, og vi er nu i gang med at træne din AI-receptionist på dine virksomhedsdata. Inden for 48 timer får du besked, når alt er klar til brug.'}
                 </p>
              </div>
 
-            <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl max-w-sm mx-auto my-8 relative overflow-hidden">
-                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600 rounded-full blur-[50px] opacity-20"></div>
-                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Aktiver viderestilling nu</p>
-                 <div className="flex items-center justify-center gap-3 bg-white/10 p-4 rounded-xl border border-white/10">
-                    <Smartphone className="w-6 h-6 text-blue-400" />
-                    <span className="text-2xl font-mono font-bold tracking-wider">
-                        {/* Forwarding code to the tenant's Twilio number.
-                           We strip the leading + for the GSM service code. */}
-                        {`**61*${(twilioNumber || '+4512345678').replace(/^\+/, '')}#`}
-                    </span>
+            {hasPhoneNumber ? (
+                <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl max-w-sm mx-auto my-8 relative overflow-hidden">
+                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600 rounded-full blur-[50px] opacity-20"></div>
+                     <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Aktiver viderestilling nu</p>
+                     <div className="flex items-center justify-center gap-3 bg-white/10 p-4 rounded-xl border border-white/10">
+                        <Smartphone className="w-6 h-6 text-blue-400" />
+                        <span className="text-2xl font-mono font-bold tracking-wider">
+                            {/* Forwarding code to the tenant's Twilio number.
+                               We strip the leading + for the GSM service code. */}
+                            {`**61*${(twilioNumber || '').replace(/^\+/, '')}#`}
+                        </span>
+                     </div>
+                     <p className="text-xs text-slate-400 mt-3">Tast koden på din mobil og ring op for at aktivere.</p>
                  </div>
-                 <p className="text-xs text-slate-400 mt-3">Tast koden på din mobil og ring op for at aktivere.</p>
-             </div>
+            ) : (
+                <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl max-w-sm mx-auto my-8 relative overflow-hidden">
+                    <div className="absolute -top-10 -right-10 w-40 h-40 bg-emerald-500 rounded-full blur-[60px] opacity-30"></div>
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center border border-white/10">
+                            <Bot className="w-5 h-5 text-emerald-300" />
+                        </div>
+                        <div className="text-left">
+                            <p className="text-xs font-bold text-emerald-200 uppercase tracking-wider">AI trænes nu</p>
+                            <p className="text-sm text-slate-100">Vi finjusterer svar, flows og kvalificering.</p>
+                        </div>
+                    </div>
+                    <ul className="space-y-2 text-sm text-slate-100/90 text-left">
+                        <li className="flex items-start gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-300 mt-0.5" />
+                            <span>Din virksomhedsprofil og onboarding-data bruges til at træne en skræddersyet AI-receptionist.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-300 mt-0.5" />
+                            <span>Vi tildeler et dedikeret telefonnummer til din konto og tester, at alt fungerer.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-300 mt-0.5" />
+                            <span>Du får besked pr. mail og/eller SMS, så snart viderestillingen er klar til at blive aktiveret.</span>
+                        </li>
+                    </ul>
+                    <p className="text-xs text-slate-300 mt-4 text-left">
+                        Typisk går der under 48 timer. Har du spørgsmål, er du altid velkommen til at kontakte os.
+                    </p>
+                </div>
+            )}
 
              <div className="space-y-3 max-w-sm mx-auto text-left my-6">
                 <label className="flex items-start gap-3 cursor-pointer group">
@@ -780,7 +819,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                 Gå til dashboard <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
              </button>
         </div>
-    );
+        );
+    };
 
     return (
         <div className="fixed inset-0 z-[200] bg-[#FAFAFA] flex flex-col">
