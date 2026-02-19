@@ -468,9 +468,11 @@ export async function upsertAiSettings(customerId, data) {
         tone,
         language,
         custom_instructions,
-        max_message_length
+        max_message_length,
+        primary_provider,
+        secondary_provider
       )
-      VALUES ($1, $2, $3, $4, $5, $6)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (customer_id) DO UPDATE
       SET
         agent_name = EXCLUDED.agent_name,
@@ -478,6 +480,8 @@ export async function upsertAiSettings(customerId, data) {
         language = EXCLUDED.language,
         custom_instructions = EXCLUDED.custom_instructions,
         max_message_length = EXCLUDED.max_message_length,
+        primary_provider = EXCLUDED.primary_provider,
+        secondary_provider = EXCLUDED.secondary_provider,
         updated_at = NOW()
       RETURNING *;
     `,
@@ -488,6 +492,8 @@ export async function upsertAiSettings(customerId, data) {
       data.language || null,
       data.custom_instructions || null,
       data.max_message_length || null,
+      data.primary_provider || 'gemini',
+      data.secondary_provider || null,
     ]
   );
 

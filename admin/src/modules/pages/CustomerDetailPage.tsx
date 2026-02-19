@@ -97,6 +97,8 @@ export const CustomerDetailPage: React.FC = () => {
   const [aiMaxLength, setAiMaxLength] = useState<number | ''>('');
   const [aiInstructions, setAiInstructions] = useState('');
   const [savingAi, setSavingAi] = useState(false);
+  const [aiPrimaryProvider, setAiPrimaryProvider] = useState<'gemini' | 'openai'>('gemini');
+  const [aiSecondaryProvider, setAiSecondaryProvider] = useState<'' | 'gemini' | 'openai'>('');
 
   const apiBase =
     import.meta.env.VITE_ADMIN_API_BASE_URL || 'https://admin-api.replypilot.dk';
@@ -125,6 +127,11 @@ export const CustomerDetailPage: React.FC = () => {
           : ''
       );
       setAiInstructions(data.customer.ai_custom_instructions || '');
+      // Default primary to gemini if not explicitly set
+      const primary = (data as any).customer.primary_provider as 'gemini' | 'openai' | undefined;
+      const secondary = (data as any).customer.secondary_provider as 'gemini' | 'openai' | undefined;
+      setAiPrimaryProvider(primary === 'openai' ? 'openai' : 'gemini');
+      setAiSecondaryProvider(secondary === 'gemini' || secondary === 'openai' ? secondary : '');
     } catch (err: any) {
       setError(err?.message || 'Uventet fejl');
     } finally {
@@ -176,6 +183,8 @@ export const CustomerDetailPage: React.FC = () => {
           custom_instructions: aiInstructions || null,
           max_message_length:
             typeof aiMaxLength === 'number' ? aiMaxLength : null,
+          primary_provider: aiPrimaryProvider,
+          secondary_provider: aiSecondaryProvider || null,
         }),
       });
       const payload = await res.json().catch(() => ({}));
@@ -590,6 +599,38 @@ export const CustomerDetailPage: React.FC = () => {
                 }
                 className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
               />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Primær AI-udbyder
+              </label>
+              <select
+                value={aiPrimaryProvider}
+                onChange={(e) =>
+                  setAiPrimaryProvider(e.target.value === 'openai' ? 'openai' : 'gemini')
+                }
+                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+              >
+                <option value="gemini">Gemini</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Sekundær (fallback)
+              </label>
+              <select
+                value={aiSecondaryProvider}
+                onChange={(e) => {
+                  const v = e.target.value as '' | 'gemini' | 'openai';
+                  setAiSecondaryProvider(v);
+                }}
+                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+              >
+                <option value="">Ingen</option>
+                <option value="gemini">Gemini</option>
+                <option value="openai">OpenAI</option>
+              </select>
             </div>
           </div>
 

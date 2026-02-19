@@ -280,6 +280,8 @@ app.patch(
       language,
       custom_instructions,
       max_message_length,
+      primary_provider,
+      secondary_provider,
     } = req.body || {};
 
     const clamp = (s, max) =>
@@ -294,6 +296,12 @@ app.patch(
         typeof max_message_length === 'number'
           ? Math.max(50, Math.min(max_message_length, 500))
           : null,
+      primary_provider:
+        primary_provider === 'openai' ? 'openai' : 'gemini',
+      secondary_provider:
+        secondary_provider === 'openai' || secondary_provider === 'gemini'
+          ? secondary_provider
+          : null,
     };
 
     const result = await query(
@@ -304,9 +312,11 @@ app.patch(
           tone,
           language,
           custom_instructions,
-          max_message_length
+          max_message_length,
+          primary_provider,
+          secondary_provider
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (customer_id) DO UPDATE
         SET
           agent_name = EXCLUDED.agent_name,
@@ -314,6 +324,8 @@ app.patch(
           language = EXCLUDED.language,
           custom_instructions = EXCLUDED.custom_instructions,
           max_message_length = EXCLUDED.max_message_length,
+          primary_provider = EXCLUDED.primary_provider,
+          secondary_provider = EXCLUDED.secondary_provider,
           updated_at = NOW()
         RETURNING
           customer_id,
@@ -321,7 +333,9 @@ app.patch(
           tone,
           language,
           custom_instructions,
-          max_message_length;
+          max_message_length,
+          primary_provider,
+          secondary_provider;
       `,
       [
         id,
@@ -330,6 +344,8 @@ app.patch(
         aiData.language,
         aiData.custom_instructions,
         aiData.max_message_length,
+        aiData.primary_provider,
+        aiData.secondary_provider,
       ]
     );
 
@@ -746,6 +762,8 @@ app.get(
       fallback_message:
         map['demo_ai_fallback_message'] ||
         'Tak for dit opkald. Svar gerne på denne SMS med lidt om hvad du har brug for, så vender vi tilbage hurtigst muligt.',
+      primary_provider: map['demo_ai_primary_provider'] || 'gemini',
+      secondary_provider: map['demo_ai_secondary_provider'] || '',
     };
 
     res.json(response);
@@ -763,6 +781,8 @@ app.put(
       instructions,
       max_tokens,
       fallback_message,
+      primary_provider,
+      secondary_provider,
     } = req.body || {};
 
     const updates = [
@@ -789,6 +809,16 @@ app.put(
         typeof fallback_message === 'string'
           ? fallback_message.slice(0, 1000)
           : 'Tak for dit opkald. Vi vender tilbage hurtigst muligt.',
+      ],
+      [
+        'demo_ai_primary_provider',
+        primary_provider === 'openai' ? 'openai' : 'gemini',
+      ],
+      [
+        'demo_ai_secondary_provider',
+        secondary_provider === 'openai' || secondary_provider === 'gemini'
+          ? secondary_provider
+          : '',
       ],
     ];
 
