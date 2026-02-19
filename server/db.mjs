@@ -39,6 +39,12 @@ export async function initDb() {
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'customer',
+      email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+      last_login_at TIMESTAMPTZ,
+      failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+      locked_until TIMESTAMPTZ,
+      password_reset_token TEXT,
+      password_reset_expires TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -186,11 +192,20 @@ export async function initDb() {
       ON customers(sms_provider);
   `);
 
-  // Ensure users.role exists (admin vs customer) and seed first admin user.
+  // Ensure users table has all columns required by auth (role, lockout, reset, etc.).
   // Runs automatically at startup so no separate migration step is required.
-  await pool.query(`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'customer';
-  `);
+  const userColumns = [
+    ['role', 'TEXT NOT NULL DEFAULT \'customer\''],
+    ['email_verified', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+    ['last_login_at', 'TIMESTAMPTZ'],
+    ['failed_login_attempts', 'INTEGER NOT NULL DEFAULT 0'],
+    ['locked_until', 'TIMESTAMPTZ'],
+    ['password_reset_token', 'TEXT'],
+    ['password_reset_expires', 'TIMESTAMPTZ'],
+  ];
+  for (const [col, def] of userColumns) {
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col} ${def}`);
+  }
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_users_role ON users(role) WHERE role = 'admin';
   `);
