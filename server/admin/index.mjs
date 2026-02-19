@@ -315,6 +315,87 @@ app.post(
   })
 );
 
+// List conversations for a customer (for admin Messages section)
+app.get(
+  '/api/admin/customers/:id/conversations',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 25, 100);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
+    const [listResult, countResult] = await Promise.all([
+      query(
+        `
+          SELECT
+            c.id,
+            c.lead_name,
+            c.lead_phone,
+            c.lead_email,
+            c.status,
+            c.message_count,
+            c.ai_response_count,
+            c.last_message_at,
+            c.created_at,
+            (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_message_preview
+          FROM conversations c
+          WHERE c.customer_id = $1
+          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+          LIMIT $2 OFFSET $3
+        `,
+        [id, limit, offset]
+      ),
+      query(`SELECT COUNT(*) AS total FROM conversations WHERE customer_id = $1`, [id]),
+    ]);
+
+    const total = parseInt(countResult.rows[0].total, 10) || 0;
+
+    res.json({
+      data: listResult.rows,
+      pagination: { limit, offset, total },
+    });
+  })
+);
+
+// Single conversation with all messages (for admin conversation detail)
+app.get(
+  '/api/admin/customers/:id/conversations/:conversationId',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id, conversationId } = req.params;
+
+    const convResult = await query(
+      `
+        SELECT c.id, c.customer_id, c.lead_name, c.lead_phone, c.lead_email, c.status,
+               c.message_count, c.ai_response_count, c.last_message_at, c.created_at
+        FROM conversations c
+        WHERE c.id = $1 AND c.customer_id = $2
+      `,
+      [conversationId, id]
+    );
+
+    if (convResult.rowCount === 0) {
+      res.status(404).json({ error: 'Conversation not found' });
+      return;
+    }
+
+    const messagesResult = await query(
+      `
+        SELECT id, conversation_id, direction, sender, content, created_at
+        FROM messages
+        WHERE conversation_id = $1
+        ORDER BY created_at ASC
+      `,
+      [conversationId]
+    );
+
+    res.json({
+      conversation: convResult.rows[0],
+      messages: messagesResult.rows,
+    });
+  })
+);
+
 // Overall admin/system health
 app.get(
   '/api/admin/health',

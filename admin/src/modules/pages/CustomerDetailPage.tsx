@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
 type Customer = {
   id: string;
@@ -72,6 +72,21 @@ export const CustomerDetailPage: React.FC = () => {
   const [testNumber, setTestNumber] = useState('');
   const [testBody, setTestBody] = useState('');
   const [testing, setTesting] = useState(false);
+  const [conversations, setConversations] = useState<
+    Array<{
+      id: number;
+      lead_name: string | null;
+      lead_phone: string;
+      lead_email: string | null;
+      status: string;
+      message_count: number;
+      last_message_at: string | null;
+      created_at: string;
+      last_message_preview: string | null;
+    }>
+  >([]);
+  const [convLoading, setConvLoading] = useState(false);
+  const [convError, setConvError] = useState<string | null>(null);
 
   const apiBase =
     import.meta.env.VITE_ADMIN_API_BASE_URL || 'https://admin-api.replypilot.dk';
@@ -100,6 +115,29 @@ export const CustomerDetailPage: React.FC = () => {
 
   useEffect(() => {
     load();
+  }, [id]);
+
+  const loadConversations = async () => {
+    if (!id) return;
+    setConvLoading(true);
+    setConvError(null);
+    try {
+      const res = await fetch(
+        `${apiBase}/api/admin/customers/${id}/conversations?limit=25&offset=0`,
+        { credentials: 'include' }
+      );
+      if (!res.ok) throw new Error('Kunne ikke hente samtaler');
+      const json = await res.json();
+      setConversations(json.data || []);
+    } catch (err: any) {
+      setConvError(err?.message || 'Uventet fejl');
+    } finally {
+      setConvLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (id) loadConversations();
   }, [id]);
 
   const handleSaveSms = async () => {
@@ -476,6 +514,82 @@ export const CustomerDetailPage: React.FC = () => {
             {testing ? 'Sender…' : 'Send test'}
           </button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+        <h2 className="text-sm font-semibold text-slate-900">Beskedoversigt</h2>
+        <p className="text-xs text-slate-600">
+          Samtaler med leads som AI-agenten har håndteret for denne kunde. Klik for at se hele tråden.
+        </p>
+        {convLoading && (
+          <p className="text-xs text-slate-500 py-4">Indlæser samtaler…</p>
+        )}
+        {convError && (
+          <p className="text-xs text-red-600 bg-red-50 rounded-md px-2 py-1.5">
+            {convError}
+          </p>
+        )}
+        {!convLoading && !convError && conversations.length === 0 && (
+          <p className="text-xs text-slate-500 py-4">Ingen samtaler endnu.</p>
+        )}
+        {!convLoading && conversations.length > 0 && (
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Lead</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Sidste besked</th>
+                  <th className="px-3 py-2">Oprettet</th>
+                  <th className="px-3 py-2 text-right">Handling</th>
+                </tr>
+              </thead>
+              <tbody>
+                {conversations.map((conv) => (
+                  <tr
+                    key={conv.id}
+                    className="border-t border-slate-100 bg-white hover:bg-slate-50/80"
+                  >
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-slate-900">
+                        {conv.lead_name || conv.lead_phone}
+                      </div>
+                      {conv.lead_name && (
+                        <div className="text-[11px] text-slate-500">{conv.lead_phone}</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="inline-flex items-center rounded-full border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                        {conv.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 max-w-[200px]">
+                      <span className="line-clamp-2 text-xs text-slate-600">
+                        {conv.last_message_preview || '—'}
+                      </span>
+                      {conv.last_message_at && (
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          {new Date(conv.last_message_at).toLocaleString('da-DK')}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-500">
+                      {new Date(conv.created_at).toLocaleDateString('da-DK')}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Link
+                        to={`/customers/${id}/conversations/${conv.id}`}
+                        className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Se samtale
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {message && (
