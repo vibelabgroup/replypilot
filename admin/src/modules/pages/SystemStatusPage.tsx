@@ -5,10 +5,11 @@ type HealthResponse = {
   db: { healthy: boolean; error?: string };
   redis: { healthy: boolean; error?: string };
   sms: {
-    twilio: { configured: boolean };
-    fonecloud: { configured: boolean };
+    twilio: { configured: boolean; healthy?: boolean; error?: string };
+    fonecloud: { configured: boolean; healthy?: boolean; error?: string };
   };
   stripe: { configured: boolean; healthy: boolean; error?: string };
+  gemini: { configured: boolean; healthy: boolean; error?: string };
 };
 
 export const SystemStatusPage: React.FC = () => {
@@ -115,18 +116,30 @@ export const SystemStatusPage: React.FC = () => {
             />
             <StatusCard
               title="Twilio"
-              healthy={data.sms.twilio.configured}
+              healthy={
+                data.sms.twilio.configured &&
+                (data.sms.twilio.healthy ?? true)
+              }
               description={
-                data.sms.twilio.configured ? 'Miljøvariabler sat' : 'TWILIO_* mangler'
+                !data.sms.twilio.configured
+                  ? 'TWILIO_* mangler'
+                  : data.sms.twilio.healthy === false
+                  ? data.sms.twilio.error || 'Fejl ved Twilio API-kald'
+                  : 'Twilio API-forbindelse OK'
               }
             />
             <StatusCard
               title="Fonecloud"
-              healthy={data.sms.fonecloud.configured}
+              healthy={
+                data.sms.fonecloud.configured &&
+                (data.sms.fonecloud.healthy ?? true)
+              }
               description={
-                data.sms.fonecloud.configured
-                  ? 'Miljøvariabler sat'
-                  : 'FONECLOUD_* mangler'
+                !data.sms.fonecloud.configured
+                  ? 'FONECLOUD_* mangler'
+                  : data.sms.fonecloud.healthy === false
+                  ? data.sms.fonecloud.error || 'Fejl ved Fonecloud API-kald'
+                  : 'Fonecloud API-forbindelse OK'
               }
             />
             <StatusCard
@@ -138,6 +151,17 @@ export const SystemStatusPage: React.FC = () => {
                   : data.stripe.healthy
                   ? 'API-kald lykkes'
                   : data.stripe.error || 'Fejl ved Stripe-kald'
+              }
+            />
+            <StatusCard
+              title="Gemini"
+              healthy={data.gemini.configured && data.gemini.healthy}
+              description={
+                !data.gemini.configured
+                  ? 'GEMINI_API_KEY mangler'
+                  : data.gemini.healthy
+                  ? 'Gemini API-forbindelse OK'
+                  : data.gemini.error || 'Fejl ved Gemini API-kald'
               }
             />
           </div>

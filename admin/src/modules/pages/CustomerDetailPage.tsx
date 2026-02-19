@@ -91,6 +91,12 @@ export const CustomerDetailPage: React.FC = () => {
   >([]);
   const [convLoading, setConvLoading] = useState(false);
   const [convError, setConvError] = useState<string | null>(null);
+  const [aiAgentName, setAiAgentName] = useState('');
+  const [aiTone, setAiTone] = useState('');
+  const [aiLanguage, setAiLanguage] = useState('da');
+  const [aiMaxLength, setAiMaxLength] = useState<number | ''>('');
+  const [aiInstructions, setAiInstructions] = useState('');
+  const [savingAi, setSavingAi] = useState(false);
 
   const apiBase =
     import.meta.env.VITE_ADMIN_API_BASE_URL || 'https://admin-api.replypilot.dk';
@@ -110,6 +116,15 @@ export const CustomerDetailPage: React.FC = () => {
       setData(data);
       setProvider(data.customer.sms_provider || 'twilio');
       setFonecloudId(data.customer.fonecloud_sender_id || '');
+      setAiAgentName(data.customer.ai_agent_name || '');
+      setAiTone(data.customer.ai_tone || '');
+      setAiLanguage(data.customer.ai_language || 'da');
+      setAiMaxLength(
+        typeof data.customer.ai_max_message_length === 'number'
+          ? data.customer.ai_max_message_length
+          : ''
+      );
+      setAiInstructions(data.customer.ai_custom_instructions || '');
     } catch (err: any) {
       setError(err?.message || 'Uventet fejl');
     } finally {
@@ -143,6 +158,38 @@ export const CustomerDetailPage: React.FC = () => {
   useEffect(() => {
     if (id) loadConversations();
   }, [id]);
+
+  const handleSaveAi = async () => {
+    if (!id) return;
+    setSavingAi(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/admin/customers/${id}/ai`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          agent_name: aiAgentName || null,
+          tone: aiTone || null,
+          language: aiLanguage || null,
+          custom_instructions: aiInstructions || null,
+          max_message_length:
+            typeof aiMaxLength === 'number' ? aiMaxLength : null,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || 'Kunne ikke opdatere AI-indstillinger');
+      }
+      setMessage('AI-indstillinger opdateret');
+      await load();
+    } catch (err: any) {
+      setError(err?.message || 'Uventet fejl');
+    } finally {
+      setSavingAi(false);
+    }
+  };
 
   const handleSaveSms = async () => {
     if (!id) return;
@@ -476,44 +523,98 @@ export const CustomerDetailPage: React.FC = () => {
           )}
         </div>
 
-        <div className="rounded-xl border bg-white p-4 space-y-2">
-          <h2 className="text-sm font-semibold text-slate-900">AI-konfiguration</h2>
-          <p className="text-xs text-slate-600">
-            Agentnavn:{' '}
-            <span className="font-medium text-slate-900">
-              {customer.ai_agent_name || 'Ikke angivet'}
-            </span>
-          </p>
-          <p className="text-xs text-slate-600">
-            Tone:{' '}
-            <span className="font-medium text-slate-900">
-              {customer.ai_tone || 'standard'}
-            </span>
-          </p>
-          <p className="text-xs text-slate-600">
-            Sprog:{' '}
-            <span className="font-medium text-slate-900">
-              {customer.ai_language || 'da'}
-            </span>
-          </p>
-          {typeof customer.ai_max_message_length === 'number' && (
-            <p className="text-xs text-slate-600">
-              Maks. beskedlængde:{' '}
-              <span className="font-medium text-slate-900">
-                {customer.ai_max_message_length} tegn
-              </span>
-            </p>
-          )}
-          {customer.ai_custom_instructions && (
-            <div className="mt-2">
-              <p className="text-xs font-medium text-slate-700 mb-1">
-                Specialinstruktioner
-              </p>
-              <p className="text-xs text-slate-700 line-clamp-3">
-                {customer.ai_custom_instructions}
+        <div className="rounded-xl border bg-white p-4 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">AI-konfiguration</h2>
+              <p className="text-xs text-slate-600">
+                Justér agentnavn, tone og instruktioner for denne kundes AI-receptionist.
               </p>
             </div>
-          )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Agentnavn
+              </label>
+              <input
+                type="text"
+                value={aiAgentName}
+                onChange={(e) => setAiAgentName(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                placeholder="Fx Maja, Anna eller Replypilot"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Tone
+              </label>
+              <select
+                value={aiTone}
+                onChange={(e) => setAiTone(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+              >
+                <option value="">Standard</option>
+                <option value="professionel">Professionel</option>
+                <option value="venlig">Venlig</option>
+                <option value="uformel">Uformel</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Sprog
+              </label>
+              <select
+                value={aiLanguage}
+                onChange={(e) => setAiLanguage(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+              >
+                <option value="da">Dansk</option>
+                <option value="en">Engelsk</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Maks. beskedlængde (tegn)
+              </label>
+              <input
+                type="number"
+                min={50}
+                max={500}
+                value={aiMaxLength}
+                onChange={(e) =>
+                  setAiMaxLength(
+                    e.target.value ? Math.min(500, Math.max(50, Number(e.target.value))) : ''
+                  )
+                }
+                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">
+              Specialinstruktioner til AI'en
+            </label>
+            <textarea
+              value={aiInstructions}
+              onChange={(e) => setAiInstructions(e.target.value)}
+              className="w-full min-h-[90px] rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 resize-y"
+              placeholder="Beskriv kort hvad kunden laver, tone of voice, og hvad AI'en altid skal spørge om."
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleSaveAi}
+              disabled={savingAi}
+              className="inline-flex items-center rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {savingAi ? 'Gemmer…' : 'Gem AI-indstillinger'}
+            </button>
+          </div>
         </div>
       </div>
 

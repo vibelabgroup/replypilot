@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import Stripe from 'stripe';
+import Twilio from 'twilio';
 import { logInfo } from '../utils/logger.mjs';
 import { authMiddleware, requireAdmin, setSessionCookie, clearSessionCookie } from '../middleware/auth.mjs';
 import { errorHandler, asyncHandler, createUnauthorizedError } from '../middleware/errorHandler.mjs';
@@ -10,6 +11,7 @@ import { query, checkDbHealth } from '../core/db.mjs';
 import { initDb } from '../db.mjs';
 import { redis } from '../core/redis.mjs';
 import { queueSms, provisionNumber } from '../core/sms/gateway.mjs';
+import { generateResponse } from '../services/aiService.mjs';
 import {
   getPoolNumbers,
   getAllocatedNumbers,
@@ -262,6 +264,80 @@ app.get(
           }
         : customer,
       usage,
+    });
+  })
+);
+
+// Update AI configuration for a customer
+app.patch(
+  '/api/admin/customers/:id/ai',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const {
+      agent_name,
+      tone,
+      language,
+      custom_instructions,
+      max_message_length,
+    } = req.body || {};
+
+    const clamp = (s, max) =>
+      typeof s === 'string' ? s.slice(0, max) : s ?? null;
+
+    const aiData = {
+      agent_name: clamp(agent_name, 100),
+      tone: clamp(tone, 50),
+      language: clamp(language, 20),
+      custom_instructions: clamp(custom_instructions, 5000),
+      max_message_length:
+        typeof max_message_length === 'number'
+          ? Math.max(50, Math.min(max_message_length, 500))
+          : null,
+    };
+
+    const result = await query(
+      `
+        INSERT INTO ai_settings (
+          customer_id,
+          agent_name,
+          tone,
+          language,
+          custom_instructions,
+          max_message_length
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (customer_id) DO UPDATE
+        SET
+          agent_name = EXCLUDED.agent_name,
+          tone = EXCLUDED.tone,
+          language = EXCLUDED.language,
+          custom_instructions = EXCLUDED.custom_instructions,
+          max_message_length = EXCLUDED.max_message_length,
+          updated_at = NOW()
+        RETURNING
+          customer_id,
+          agent_name,
+          tone,
+          language,
+          custom_instructions,
+          max_message_length;
+      `,
+      [
+        id,
+        aiData.agent_name,
+        aiData.tone,
+        aiData.language,
+        aiData.custom_instructions,
+        aiData.max_message_length,
+      ]
+    );
+
+    const row = result.rows[0];
+
+    res.json({
+      success: true,
+      ai: row,
     });
   })
 );
@@ -521,12 +597,46 @@ app.get(
           !!process.env.TWILIO_ACCOUNT_SID &&
           !!process.env.TWILIO_AUTH_TOKEN &&
           !!process.env.TWILIO_MESSAGING_SERVICE_SID,
+        healthy: false,
       },
       fonecloud: {
         configured:
           !!process.env.FONECLOUD_API_BASE_URL && !!process.env.FONECLOUD_TOKEN,
+        healthy: false,
       },
     };
+
+    // Twilio health – perform a lightweight authenticated call when configured
+    if (smsProviders.twilio.configured) {
+      try {
+        const twilioClient = Twilio(
+          process.env.TWILIO_ACCOUNT_SID,
+          process.env.TWILIO_AUTH_TOKEN
+        );
+        const accountSid = process.env.TWILIO_ACCOUNT_SID;
+        await twilioClient.api.v2010.accounts(accountSid).fetch();
+        smsProviders.twilio.healthy = true;
+      } catch (error) {
+        smsProviders.twilio.healthy = false;
+        smsProviders.twilio.error = error.message;
+      }
+    }
+
+    // Fonecloud health – basic connectivity check when configured
+    if (smsProviders.fonecloud.configured) {
+      try {
+        const baseUrl = process.env.FONECLOUD_API_BASE_URL;
+        const url = new URL(baseUrl);
+        const res = await fetch(url.toString(), { method: 'HEAD' });
+        smsProviders.fonecloud.healthy = res.ok;
+        if (!res.ok) {
+          smsProviders.fonecloud.error = `HTTP ${res.status}`;
+        }
+      } catch (error) {
+        smsProviders.fonecloud.healthy = false;
+        smsProviders.fonecloud.error = error.message;
+      }
+    }
 
     let stripeStatus = { configured: !!process.env.STRIPE_SECRET_KEY, healthy: false };
     if (process.env.STRIPE_SECRET_KEY) {
@@ -540,12 +650,32 @@ app.get(
       }
     }
 
+    // Gemini / AI health – warm path check
+    const gemini = {
+      configured: !!process.env.GEMINI_API_KEY,
+      healthy: false,
+    };
+
+    if (gemini.configured) {
+      try {
+        // Minimal, non-persistent test call
+        const testCustomerId = -1;
+        const testConversationId = -1;
+        await generateResponse(testCustomerId, testConversationId, '[HEALTHCHECK] Check-in');
+        gemini.healthy = true;
+      } catch (error) {
+        gemini.healthy = false;
+        gemini.error = error.message;
+      }
+    }
+
     res.json({
       status: dbHealth.healthy && redisPing.healthy ? 'ok' : 'degraded',
       db: dbHealth,
       redis: redisPing,
       sms: smsProviders,
       stripe: stripeStatus,
+      gemini,
     });
   })
 );
