@@ -3,38 +3,38 @@ import { Review, ChatMessage, Feature } from './types';
 export const REVIEWS: Review[] = [
     {
         text: "Det har fuldstændig ændret min hverdag. Jeg plejede at stresse over ubesvarede opkald når jeg stod hos en kunde. Nu slapper jeg af velvidende at Replypilot griber dem.",
-        author: "Tømrer Jensen",
-        role: "Mester",
+        author: "Anders",
+        role: "Tømrer, Aalborg",
         stars: 5
     },
     {
         text: "Mine kunder elsker det. De føler sig hørt med det samme, og jeg får en SMS med det samme om hvad de vil. Det er genialt og alle pengene værd.",
-        author: "Murermester Bo",
-        role: "Ejer, Bo Byg",
+        author: "Bo",
+        role: "Murer, Esbjerg",
         stars: 5
     },
     {
         text: "Vi har øget vores konvertering markant. Før ringede folk videre til den næste tømrer, hvis vi ikke tog den. Nu booker vi dem direkte i kalenderen via SMS.",
         author: "Morten",
-        role: "Elektrikeren ApS",
+        role: "Elektriker, Randers",
         stars: 5
     },
     {
         text: "Installation var super nem. Jeg troede det ville være besværligt, men det kørte efter 5 minutter. Kan kun anbefale det til andre håndværkere.",
-        author: "Anlægsgartneren",
-        role: "København",
+        author: "Rasmus",
+        role: "Anlægsgartner, København",
         stars: 5
     },
     {
         text: "Endelig en løsning der fungerer i weekenden. Jeg kan holde fri med familien uden at miste kunder til konkurrenterne. Det kører bare.",
-        author: "Malermesteren",
-        role: "Aarhus",
+        author: "Lars",
+        role: "Maler, Aarhus",
         stars: 5
     },
     {
         text: "Jeg var skeptisk over for AI, men det her virker bare. Kunderne tror de skriver med en rigtig person, og det sikrer mig opgaven.",
-        author: "VVS Ole",
-        role: "Odense",
+        author: "Ole",
+        role: "VVS'er, Odense",
         stars: 5
     }
 ];

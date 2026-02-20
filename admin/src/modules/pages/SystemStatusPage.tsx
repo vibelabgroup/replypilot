@@ -20,6 +20,10 @@ export const SystemStatusPage: React.FC = () => {
   const [defaultProvider, setDefaultProvider] = useState<'twilio' | 'fonecloud'>('twilio');
   const [savingDefault, setSavingDefault] = useState(false);
   const [defaultError, setDefaultError] = useState<string | null>(null);
+  const [defaultGeminiModel, setDefaultGeminiModel] = useState('');
+  const [defaultGroqModel, setDefaultGroqModel] = useState('');
+  const [savingAiDefault, setSavingAiDefault] = useState(false);
+  const [aiDefaultError, setAiDefaultError] = useState<string | null>(null);
   const [demoAgentName, setDemoAgentName] = useState('');
   const [demoTone, setDemoTone] = useState('professionel');
   const [demoLanguage, setDemoLanguage] = useState<'da' | 'en'>('da');
@@ -36,9 +40,10 @@ export const SystemStatusPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [healthRes, defaultRes, demoAiRes] = await Promise.all([
+      const [healthRes, defaultRes, aiDefaultRes, demoAiRes] = await Promise.all([
         fetch(`${apiBase}/api/admin/health`),
         fetch(`${apiBase}/api/admin/sms-default`, { credentials: 'include' }),
+        fetch(`${apiBase}/api/admin/ai-default`, { credentials: 'include' }),
         fetch(`${apiBase}/api/admin/demo-ai`, { credentials: 'include' }),
       ]);
 
@@ -52,6 +57,14 @@ export const SystemStatusPage: React.FC = () => {
         const json = await defaultRes.json();
         if (json?.provider === 'fonecloud' || json?.provider === 'twilio') {
           setDefaultProvider(json.provider);
+        }
+      }
+
+      if (aiDefaultRes.ok) {
+        const json = await aiDefaultRes.json();
+        if (json) {
+          setDefaultGeminiModel(json.gemini_model || '');
+          setDefaultGroqModel(json.groq_model || '');
         }
       }
 
@@ -74,6 +87,32 @@ export const SystemStatusPage: React.FC = () => {
       setError(err?.message || 'Uventet fejl');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveAiDefault = async () => {
+    setSavingAiDefault(true);
+    setAiDefaultError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/admin/ai-default`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          gemini_model: defaultGeminiModel || undefined,
+          groq_model: defaultGroqModel || undefined,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || 'Kunne ikke gemme standard AI-modeller');
+      }
+      if (payload.gemini_model) setDefaultGeminiModel(payload.gemini_model);
+      if (payload.groq_model) setDefaultGroqModel(payload.groq_model);
+    } catch (err: any) {
+      setAiDefaultError(err?.message || 'Uventet fejl ved gem af standard AI-modeller');
+    } finally {
+      setSavingAiDefault(false);
     }
   };
 
@@ -266,6 +305,56 @@ export const SystemStatusPage: React.FC = () => {
             {defaultError && (
               <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-md px-2 py-1.5">
                 {defaultError}
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-xl border bg-white p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Standard AI-model for nye kunder
+                </h2>
+                <p className="text-xs text-slate-600">
+                  Bruges til alle nye kunder, medmindre der sættes en individuel model på kunden.
+                  Eksempler: gemini-2.5-flash, gemini-2.0-flash, llama-3.1-8b-instant.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-0.5">Gemini-model</label>
+                  <input
+                    type="text"
+                    value={defaultGeminiModel}
+                    onChange={(e) => setDefaultGeminiModel(e.target.value)}
+                    placeholder="gemini-2.5-flash"
+                    className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-0.5">Groq-model</label>
+                  <input
+                    type="text"
+                    value={defaultGroqModel}
+                    onChange={(e) => setDefaultGroqModel(e.target.value)}
+                    placeholder="llama-3.1-8b-instant"
+                    className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={handleSaveAiDefault}
+                disabled={savingAiDefault}
+                className="inline-flex items-center rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                {savingAiDefault ? 'Gemmer…' : 'Gem standard'}
+              </button>
+            </div>
+            {aiDefaultError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-md px-2 py-1.5">
+                {aiDefaultError}
               </p>
             )}
           </div>

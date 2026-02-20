@@ -200,6 +200,8 @@ app.get(
             ai.language AS ai_language,
             ai.custom_instructions AS ai_custom_instructions,
             ai.max_message_length AS ai_max_message_length,
+            ai.gemini_model AS ai_gemini_model,
+            ai.groq_model AS ai_groq_model,
             (
               SELECT tn.phone_number
               FROM twilio_numbers tn
@@ -303,10 +305,14 @@ app.patch(
       max_message_length,
       primary_provider,
       secondary_provider,
+      gemini_model,
+      groq_model,
     } = req.body || {};
 
     const clamp = (s, max) =>
       typeof s === 'string' ? s.slice(0, max) : s ?? null;
+    const clampModel = (s) =>
+      typeof s === 'string' ? s.trim().slice(0, 120) || null : null;
 
     const aiData = {
       agent_name: clamp(agent_name, 100),
@@ -323,6 +329,8 @@ app.patch(
         secondary_provider === 'openai' || secondary_provider === 'gemini' || secondary_provider === 'groq'
           ? secondary_provider
           : null,
+      gemini_model: clampModel(gemini_model),
+      groq_model: clampModel(groq_model),
     };
 
     const result = await query(
@@ -335,9 +343,11 @@ app.patch(
           custom_instructions,
           max_message_length,
           primary_provider,
-          secondary_provider
+          secondary_provider,
+          gemini_model,
+          groq_model
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (customer_id) DO UPDATE
         SET
           agent_name = EXCLUDED.agent_name,
@@ -347,6 +357,8 @@ app.patch(
           max_message_length = EXCLUDED.max_message_length,
           primary_provider = EXCLUDED.primary_provider,
           secondary_provider = EXCLUDED.secondary_provider,
+          gemini_model = EXCLUDED.gemini_model,
+          groq_model = EXCLUDED.groq_model,
           updated_at = NOW()
         RETURNING
           customer_id,
@@ -356,7 +368,9 @@ app.patch(
           custom_instructions,
           max_message_length,
           primary_provider,
-          secondary_provider;
+          secondary_provider,
+          gemini_model,
+          groq_model;
       `,
       [
         id,
@@ -367,6 +381,8 @@ app.patch(
         aiData.max_message_length,
         aiData.primary_provider,
         aiData.secondary_provider,
+        aiData.gemini_model,
+        aiData.groq_model,
       ]
     );
 
@@ -771,6 +787,49 @@ app.put(
     );
 
     res.json({ provider });
+  })
+);
+
+// Global default AI models for new clients (used when per-client override is not set)
+app.get(
+  '/api/admin/ai-default',
+  requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const result = await query(
+      `SELECT key, value FROM system_settings WHERE key IN ('default_gemini_model', 'default_groq_model')`,
+      []
+    );
+    const map = {};
+    for (const row of result.rows) {
+      map[row.key] = row.value;
+    }
+    res.json({
+      gemini_model: map.default_gemini_model || 'gemini-2.5-flash',
+      groq_model: map.default_groq_model || 'llama-3.1-8b-instant',
+    });
+  })
+);
+
+app.put(
+  '/api/admin/ai-default',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { gemini_model, groq_model } = req.body || {};
+    const clampModel = (s) =>
+      typeof s === 'string' ? s.trim().slice(0, 120) : null;
+    const gemini = clampModel(gemini_model) || 'gemini-2.5-flash';
+    const groq = clampModel(groq_model) || 'llama-3.1-8b-instant';
+
+    await query(
+      `
+        INSERT INTO system_settings (key, value)
+        VALUES ('default_gemini_model', $1), ('default_groq_model', $2)
+        ON CONFLICT (key) DO UPDATE
+        SET value = EXCLUDED.value, updated_at = NOW()
+      `,
+      [gemini, groq]
+    );
+    res.json({ gemini_model: gemini, groq_model: groq });
   })
 );
 

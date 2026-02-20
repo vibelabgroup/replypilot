@@ -406,6 +406,24 @@ export async function initDb() {
         ALTER TABLE ai_settings
         ADD COLUMN secondary_provider VARCHAR(20);
       END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'gemini_model'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN gemini_model VARCHAR(120);
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'groq_model'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN groq_model VARCHAR(120);
+      END IF;
     END
     $$;
   `);

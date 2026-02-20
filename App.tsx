@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { Reviews } from './components/Reviews';
+import { HowItWorks } from './components/HowItWorks';
 import { Comparison } from './components/Comparison';
 import { Calculator } from './components/Calculator';
 import { Features } from './components/Features';
@@ -15,6 +16,9 @@ import { Auth } from './components/Auth';
 import { Handelsbetingelser } from './components/pages/Handelsbetingelser';
 import { Privatlivspolitik } from './components/pages/Privatlivspolitik';
 import { Databehandleraftale } from './components/pages/Databehandleraftale';
+import { AboutUs } from './components/pages/AboutUs';
+import { ContactUs } from './components/pages/ContactUs';
+import { EkstraOmsaetning } from './components/pages/EkstraOmsaetning';
 
 const App: React.FC = () => {
     const location = useLocation();
@@ -164,12 +168,43 @@ const App: React.FC = () => {
         );
     }
 
+    if (location.pathname === '/about-us') {
+        return (
+            <>
+                <Navbar onOpenModal={handleOpenModal} onLogin={() => setShowAuth(true)} />
+                <AboutUs />
+                <Footer />
+            </>
+        );
+    }
+
+    if (location.pathname === '/contact-us') {
+        return (
+            <>
+                <Navbar onOpenModal={handleOpenModal} onLogin={() => setShowAuth(true)} />
+                <ContactUs />
+                <Footer />
+            </>
+        );
+    }
+
+    if (location.pathname === '/ekstra-omsaetning') {
+        return (
+            <>
+                <Navbar onOpenModal={handleOpenModal} onLogin={() => setShowAuth(true)} />
+                <EkstraOmsaetning />
+                <Footer />
+            </>
+        );
+    }
+
     return (
         <>
             <Navbar onOpenModal={handleOpenModal} onLogin={() => setShowAuth(true)} />
             <main>
                 <Hero />
                 <Reviews />
+                <HowItWorks />
                 <Comparison />
                 <Calculator />
                 <Features />

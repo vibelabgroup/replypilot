@@ -38,6 +38,8 @@ type Customer = {
   ai_language?: string | null;
   ai_custom_instructions?: string | null;
   ai_max_message_length?: number | null;
+  ai_gemini_model?: string | null;
+  ai_groq_model?: string | null;
   // Notification preferences (summary)
   notify_email_enabled?: boolean;
   notify_email_new_lead?: boolean;
@@ -99,6 +101,8 @@ export const CustomerDetailPage: React.FC = () => {
   const [savingAi, setSavingAi] = useState(false);
   const [aiPrimaryProvider, setAiPrimaryProvider] = useState<'gemini' | 'openai' | 'groq'>('gemini');
   const [aiSecondaryProvider, setAiSecondaryProvider] = useState<'' | 'gemini' | 'openai' | 'groq'>('');
+  const [aiGeminiModel, setAiGeminiModel] = useState('');
+  const [aiGroqModel, setAiGroqModel] = useState('');
 
   const apiBase =
     import.meta.env.VITE_ADMIN_API_BASE_URL || 'https://admin-api.replypilot.dk';
@@ -131,6 +135,8 @@ export const CustomerDetailPage: React.FC = () => {
       const secondary = (data as any).customer.secondary_provider as 'gemini' | 'openai' | 'groq' | undefined;
       setAiPrimaryProvider(primary === 'openai' ? 'openai' : primary === 'groq' ? 'groq' : 'gemini');
       setAiSecondaryProvider(secondary === 'gemini' || secondary === 'openai' || secondary === 'groq' ? secondary : '');
+      setAiGeminiModel((data as any).customer.ai_gemini_model || '');
+      setAiGroqModel((data as any).customer.ai_groq_model || '');
     } catch (err: any) {
       setError(err?.message || 'Uventet fejl');
     } finally {
@@ -184,6 +190,8 @@ export const CustomerDetailPage: React.FC = () => {
             typeof aiMaxLength === 'number' ? aiMaxLength : null,
           primary_provider: aiPrimaryProvider,
           secondary_provider: aiSecondaryProvider || null,
+          gemini_model: aiGeminiModel.trim() || null,
+          groq_model: aiGroqModel.trim() || null,
         }),
       });
       const payload = await res.json().catch(() => ({}));
@@ -633,6 +641,30 @@ export const CustomerDetailPage: React.FC = () => {
                 <option value="openai">OpenAI</option>
                 <option value="groq">Groq (free tier)</option>
               </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Gemini-model (override)
+              </label>
+              <input
+                type="text"
+                value={aiGeminiModel}
+                onChange={(e) => setAiGeminiModel(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                placeholder="Tom = systemstandard"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Groq-model (override)
+              </label>
+              <input
+                type="text"
+                value={aiGroqModel}
+                onChange={(e) => setAiGroqModel(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                placeholder="Tom = systemstandard"
+              />
             </div>
           </div>
 

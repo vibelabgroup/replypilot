@@ -92,7 +92,7 @@ export const Pricing: React.FC<PricingProps> = ({ onStart }) => {
                                 </div>
                                 <div className="flex items-center gap-4">
                                     <div className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center shrink-0"><Check className="w-3.5 h-3.5" /></div>
-                                    <span className="text-slate-700 font-medium">Opsætning inkluderet (Værdi 1.500,-)</span>
+                                    <span className="text-slate-700 font-medium">Opsætning inkluderet (Værdi 5.995,-)</span>
                                 </div>
                                  <div className="flex items-center gap-4">
                                     <div className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center shrink-0"><Check className="w-3.5 h-3.5" /></div>
@@ -110,15 +110,6 @@ export const Pricing: React.FC<PricingProps> = ({ onStart }) => {
 
                 </div>
                 
-                <div className="mt-24 text-center border-t border-slate-100 pt-12">
-                    <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider mb-8">Bruges allerede af førende håndværkere</p>
-                    <div className="flex flex-wrap justify-center gap-10 md:gap-16 opacity-30 grayscale hover:opacity-50 transition-opacity duration-300">
-                       <span className="text-2xl font-bold font-serif text-slate-900">MesterByg</span>
-                       <span className="text-2xl font-black tracking-tighter text-slate-900">EL-EXPERTEN</span>
-                       <span className="text-2xl font-bold italic text-slate-900">VVS-Gruppen</span>
-                       <span className="text-2xl font-semibold text-slate-900">TotalEntreprise A/S</span>
-                    </div>
-                </div>
             </div>
         </section>
     );
