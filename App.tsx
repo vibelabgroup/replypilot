@@ -23,6 +23,7 @@ import { ResetPassword } from './components/pages/ResetPassword';
 import { trackEvent } from './services/telemetry';
 
 type EntitlementStatus = 'unknown' | 'unpaid' | 'paid';
+const ONBOARDING_CHECKOUT_KEY = 'replypilot_onboarding_checkout';
 
 const App: React.FC = () => {
     const onboardingFirstEnabled = import.meta.env.VITE_FLOW_A_ONBOARDING_FIRST !== 'false';
@@ -34,6 +35,7 @@ const App: React.FC = () => {
     const [subscriptionChecked, setSubscriptionChecked] = useState(false);
     const [initialLeadId, setInitialLeadId] = useState<number | null>(null);
     const [entitlementStatus, setEntitlementStatus] = useState<EntitlementStatus>('unknown');
+    const [onboardingInitialStep, setOnboardingInitialStep] = useState(1);
 
     const refreshEntitlement = async (): Promise<EntitlementStatus> => {
         const apiBase =
@@ -95,25 +97,41 @@ const App: React.FC = () => {
 
             if (isSuccess) {
                 trackEvent('checkout_completed_redirect');
+                const fromOnboardingCheckout = window.localStorage.getItem(ONBOARDING_CHECKOUT_KEY) === '1';
                 if (hasSession) {
                     await refreshEntitlement();
-                    setShowDashboard(true);
-                    setIsOnboarding(false);
+                    if (fromOnboardingCheckout) {
+                        setOnboardingInitialStep(5);
+                        setIsOnboarding(true);
+                        setShowDashboard(false);
+                    } else {
+                        setShowDashboard(true);
+                        setIsOnboarding(false);
+                    }
                 } else if (!onboardingFirstEnabled) {
                     setIsOnboarding(true);
                     window.scrollTo(0, 0);
                 } else {
                     setShowAuth(true);
                 }
+                window.localStorage.removeItem(ONBOARDING_CHECKOUT_KEY);
                 // Clean up URL so the flag does not persist
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
 
             if (isCancel) {
+                const fromOnboardingCheckout = window.localStorage.getItem(ONBOARDING_CHECKOUT_KEY) === '1';
                 if (hasSession) {
-                    await refreshEntitlement();
-                    setShowDashboard(true);
+                    if (fromOnboardingCheckout) {
+                        setOnboardingInitialStep(4);
+                        setIsOnboarding(true);
+                        setShowDashboard(false);
+                    } else {
+                        await refreshEntitlement();
+                        setShowDashboard(true);
+                    }
                 }
+                window.localStorage.removeItem(ONBOARDING_CHECKOUT_KEY);
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
 
@@ -151,6 +169,7 @@ const App: React.FC = () => {
 
     const handleSignupComplete = () => {
         trackEvent('onboarding_started', { source: 'signup_modal' });
+        setOnboardingInitialStep(1);
         setIsOnboarding(true);
         setShowAuth(false);
         setShowDashboard(false);
@@ -160,14 +179,24 @@ const App: React.FC = () => {
 
     const handleOnboardingComplete = () => {
         trackEvent('onboarding_completed');
+        setOnboardingInitialStep(1);
         setIsOnboarding(false);
         setShowDashboard(true);
         refreshEntitlement();
         window.scrollTo(0, 0);
     };
 
-    const handleStartCheckout = async (acceptedTerms: boolean, acceptedDpa: boolean) => {
+    const handleStartCheckout = async (
+        acceptedTerms: boolean,
+        acceptedDpa: boolean,
+        context: 'dashboard' | 'onboarding' = 'dashboard'
+    ) => {
         trackEvent('checkout_started', { acceptedTerms, acceptedDpa });
+        if (context === 'onboarding') {
+            window.localStorage.setItem(ONBOARDING_CHECKOUT_KEY, '1');
+        } else {
+            window.localStorage.removeItem(ONBOARDING_CHECKOUT_KEY);
+        }
         const apiBase =
             import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
         const res = await fetch(`${apiBase}/create-checkout-session`, {
@@ -215,7 +244,16 @@ const App: React.FC = () => {
     }
 
     if (isOnboarding) {
-        return <Onboarding onComplete={handleOnboardingComplete} />;
+        return (
+            <Onboarding
+                onComplete={handleOnboardingComplete}
+                initialStep={onboardingInitialStep}
+                hasActiveSubscription={entitlementStatus === 'paid'}
+                onStartCheckout={(acceptedTerms, acceptedDpa) =>
+                    handleStartCheckout(acceptedTerms, acceptedDpa, 'onboarding')
+                }
+            />
+        );
     }
 
     if (showAuth) {

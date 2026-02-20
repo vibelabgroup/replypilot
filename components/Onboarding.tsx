@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { OnboardingData } from '../types';
-import { Bot, Building2, CheckCircle2, ChevronRight, Bell, Sparkles, Smartphone, Globe, Search, Database, Mail, MessageSquare, Loader2, MapPin, Calendar, FileText, BadgeCheck, Map, Clock, Pencil, ExternalLink } from 'lucide-react';
+import { Bot, Building2, CheckCircle2, ChevronRight, Bell, Sparkles, Smartphone, Globe, Search, Database, Mail, MessageSquare, Loader2, MapPin, Calendar, FileText, BadgeCheck, Map, Clock, Pencil, ExternalLink, CreditCard } from 'lucide-react';
 import { analyzeCompanyInfo } from '../services/aiService';
 import { trackEvent } from '../services/telemetry';
 
@@ -8,10 +8,18 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || window.location.origin.rep
 
 interface OnboardingProps {
     onComplete: () => void;
+    onStartCheckout: (acceptedTerms: boolean, acceptedDpa: boolean) => Promise<void>;
+    hasActiveSubscription: boolean;
+    initialStep?: number;
 }
 
-export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
-    const [step, setStep] = useState(1);
+export const Onboarding: React.FC<OnboardingProps> = ({
+    onComplete,
+    onStartCheckout,
+    hasActiveSubscription,
+    initialStep = 1,
+}) => {
+    const [step, setStep] = useState(initialStep);
     
     // Strict View State to prevent looping back to input
     const [viewState, setViewState] = useState<'input' | 'analyzing' | 'results'>('input');
@@ -53,6 +61,14 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     const [twilioNumber, setTwilioNumber] = useState<string | null>(null);
     const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [saveError, setSaveError] = useState<string | null>(null);
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
+    const [acceptedDpa, setAcceptedDpa] = useState(false);
+    const [paymentLoading, setPaymentLoading] = useState(false);
+    const [paymentError, setPaymentError] = useState<string | null>(null);
+
+    useEffect(() => {
+        setStep(initialStep);
+    }, [initialStep]);
 
     // Preload any existing settings so onboarding "remembers" what was entered
     useEffect(() => {
@@ -297,6 +313,19 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         if (step < 4) {
             setStep(prev => prev + 1);
             trackEvent('onboarding_step_completed', { step });
+        }
+    };
+
+    const handleStartPayment = async () => {
+        setPaymentError(null);
+        setPaymentLoading(true);
+        try {
+            await saveSettings();
+            await onStartCheckout(acceptedTerms, acceptedDpa);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Kunne ikke starte betaling';
+            setPaymentError(message);
+            setPaymentLoading(false);
         }
     };
 
@@ -682,6 +711,92 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     };
 
     const renderStep4 = () => {
+        if (hasActiveSubscription) {
+            return (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="text-center mb-8">
+                        <div className="w-16 h-16 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-green-600">
+                            <CheckCircle2 className="w-8 h-8" />
+                        </div>
+                        <h2 className="text-2xl font-bold text-slate-900">Betaling gennemført</h2>
+                        <p className="text-slate-500">Super - du er klar til sidste trin.</p>
+                    </div>
+                    <div className="flex justify-center">
+                        <button
+                            onClick={() => setStep(5)}
+                            className="bg-black text-white px-8 py-4 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-800 transition-all shadow-xl shadow-slate-200"
+                        >
+                            Gå til sidste trin <ChevronRight className="w-5 h-5" />
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="text-center mb-8">
+                    <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-indigo-600">
+                        <CreditCard className="w-8 h-8" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-900">Aktiver betaling</h2>
+                    <p className="text-slate-500">Dette er trin 4. Gennemfør betaling for at fortsætte til AI-træning.</p>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={acceptedTerms}
+                            onChange={(e) => setAcceptedTerms(e.target.checked)}
+                            className="mt-1 w-4 h-4 rounded border-slate-300 text-black focus:ring-black"
+                        />
+                        <span className="text-sm text-slate-600">
+                            Jeg accepterer{' '}
+                            <a href="/handelsbetingelser" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
+                                handelsbetingelserne
+                            </a>.
+                        </span>
+                    </label>
+                    <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={acceptedDpa}
+                            onChange={(e) => setAcceptedDpa(e.target.checked)}
+                            className="mt-1 w-4 h-4 rounded border-slate-300 text-black focus:ring-black"
+                        />
+                        <span className="text-sm text-slate-600">
+                            Jeg accepterer{' '}
+                            <a href="/databehandleraftale" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
+                                databehandleraftalen (DPA)
+                            </a>.
+                        </span>
+                    </label>
+                    {paymentError && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                            {paymentError}
+                        </div>
+                    )}
+                    <button
+                        onClick={handleStartPayment}
+                        disabled={paymentLoading || !acceptedTerms || !acceptedDpa}
+                        className="w-full h-12 bg-slate-900 text-white font-medium rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                    >
+                        {paymentLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+                        {paymentLoading ? 'Sender til betaling...' : 'Betal og fortsæt'}
+                    </button>
+                    <button
+                        onClick={handleComplete}
+                        className="w-full text-slate-500 hover:text-slate-900 font-medium text-sm"
+                    >
+                        Gå til dashboard uden betaling
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
+    const renderStep5 = () => {
         const hasPhoneNumber = !!twilioNumber;
 
         return (
@@ -773,10 +888,11 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                         <span className={`w-2 h-2 rounded-full ${step >= 1 ? 'bg-blue-600' : 'bg-slate-200'}`}></span>
                         <span className={`w-2 h-2 rounded-full ${step >= 2 ? 'bg-blue-600' : 'bg-slate-200'}`}></span>
                         <span className={`w-2 h-2 rounded-full ${step >= 3 ? 'bg-blue-600' : 'bg-slate-200'}`}></span>
-                        <span className={`w-2 h-2 rounded-full ${step >= 4 ? 'bg-green-500' : 'bg-slate-200'}`}></span>
+                        <span className={`w-2 h-2 rounded-full ${step >= 4 ? 'bg-blue-600' : 'bg-slate-200'}`}></span>
+                        <span className={`w-2 h-2 rounded-full ${step >= 5 ? 'bg-green-500' : 'bg-slate-200'}`}></span>
                     </div>
                     <div className="text-sm font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-                        Trin {step} af 4
+                        Trin {step} af 5
                     </div>
                 </div>
             </div>
@@ -785,7 +901,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
             <div className="w-full h-1 bg-slate-100 shrink-0">
                 <div 
                     className="h-full bg-blue-600 transition-all duration-700 ease-out" 
-                    style={{ width: `${(step / 4) * 100}%` }}
+                    style={{ width: `${(step / 5) * 100}%` }}
                 ></div>
             </div>
 
@@ -796,6 +912,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     {step === 2 && renderStep2()}
                     {step === 3 && renderStep3()}
                     {step === 4 && renderStep4()}
+                    {step === 5 && renderStep5()}
 
                     {step < 4 && (
                         <div className="mt-10 flex justify-end pt-6 border-t border-slate-100">
