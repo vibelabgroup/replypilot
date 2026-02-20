@@ -20,11 +20,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const [selectedLead, setSelectedLead] = useState<any>(null);
     const [leadTimeline, setLeadTimeline] = useState<any[]>([]);
     const [leads, setLeads] = useState<any[]>([]);
+    const [leadTotal, setLeadTotal] = useState(0);
     const [notificationSettings, setNotificationSettings] = useState<any | null>(null);
     const [notificationHistory, setNotificationHistory] = useState<any[]>([]);
     const [companySettings, setCompanySettings] = useState<any | null>(null);
     const [aiSettings, setAiSettings] = useState<any | null>(null);
     const [smsSettings, setSmsSettings] = useState<any | null>(null);
+    const [minutesSavedPerMessage, setMinutesSavedPerMessage] = useState(2);
     const [activeTab, setActiveTab] = useState<'overview' | 'customers' | 'settings'>('overview');
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [smsProvider, setSmsProvider] = useState<'twilio' | 'fonecloud'>('twilio');
@@ -57,6 +59,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     setCompanySettings(data.company);
                     setAiSettings(data.ai);
                     setSmsSettings(data.sms);
+                    const rawMinutes = Number(data?.metrics?.minutes_saved_per_message);
+                    if (Number.isFinite(rawMinutes)) {
+                        setMinutesSavedPerMessage(Math.max(1, Math.min(rawMinutes, 60)));
+                    }
                     if (data.sms) {
                         setSmsProvider((data.sms.provider === 'fonecloud' ? 'fonecloud' : 'twilio'));
                         setFonecloudSenderId(data.sms.fonecloud_sender_id || '');
@@ -96,12 +102,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
         id: lead.id,
         name: lead?.name || lead?.conversation_name || lead?.phone || 'Ukendt lead',
         time: lead?.created_at ? new Date(lead.created_at).toLocaleString('da-DK') : '-',
+        created_at: lead?.created_at || null,
         topic: lead?.qualification || 'Nyt lead',
         msg: lead?.last_message || 'Ingen besked endnu',
         email: lead?.email || '-',
         phone: lead?.phone || '-',
         address: '-',
         conversation_id: lead?.conversation_id || null,
+        message_count: Number(lead?.message_count || 0),
+        estimated_value: lead?.estimated_value ?? null,
+        converted_value: lead?.converted_value ?? null,
     });
 
     const loadLeads = async () => {
@@ -114,11 +124,41 @@ export const Dashboard: React.FC<DashboardProps> = ({
             if (res.ok) {
                 const data = await res.json();
                 setLeads((data.leads || []).map(mapLeadSummary));
+                setLeadTotal(Number(data.total || 0));
             }
         } catch (err) {
             console.warn('Kunne ikke hente leads', err);
         }
     };
+
+    const todayLeadCount = leads.filter((lead) => {
+        if (!lead.created_at) return false;
+        const d = new Date(lead.created_at);
+        const now = new Date();
+        return (
+            d.getFullYear() === now.getFullYear() &&
+            d.getMonth() === now.getMonth() &&
+            d.getDate() === now.getDate()
+        );
+    }).length;
+
+    const savedMinutes = leads.reduce((sum, lead) => {
+        // Approximate saved time using real message volume.
+        const msgCount = Number(lead.message_count || 0);
+        return sum + (msgCount > 0 ? msgCount * minutesSavedPerMessage : 0);
+    }, 0);
+
+    const potentialRevenue = leads.reduce((sum, lead) => {
+        const value = Number(lead.converted_value ?? lead.estimated_value ?? 0);
+        return Number.isFinite(value) ? sum + value : sum;
+    }, 0);
+
+    const formatDkk = (value: number) =>
+        new Intl.NumberFormat('da-DK', {
+            style: 'currency',
+            currency: 'DKK',
+            maximumFractionDigits: 0,
+        }).format(value);
 
     const openLead = async (lead: any) => {
         if (isLocked) {
@@ -461,8 +501,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><Phone className="w-5 h-5" /></div>
                                </div>
                                <div className="flex items-baseline gap-2">
-                                    <div className="text-3xl font-bold text-slate-900">12</div>
-                                    <span className="text-xs text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full">+4 i dag</span>
+                                    <div className="text-3xl font-bold text-slate-900">{leadTotal}</div>
+                                    <span className="text-xs text-slate-500 font-medium">
+                                        {todayLeadCount} i dag
+                                    </span>
                                </div>
                            </div>
                            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
@@ -471,8 +513,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                    <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center"><Clock className="w-5 h-5" /></div>
                                </div>
                                <div className="flex items-baseline gap-2">
-                                    <div className="text-3xl font-bold text-slate-900">45 min</div>
-                                    <span className="text-xs text-slate-400 font-medium">Denne uge</span>
+                                    <div className="text-3xl font-bold text-slate-900">{savedMinutes} min</div>
+                                    <span className="text-xs text-slate-500 font-medium">Estimeret ({minutesSavedPerMessage} min/besked)</span>
                                </div>
                            </div>
                            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
@@ -481,8 +523,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                    <div className="w-10 h-10 bg-green-50 text-green-600 rounded-xl flex items-center justify-center"><TrendingUp className="w-5 h-5" /></div>
                                </div>
                                <div className="flex items-baseline gap-2">
-                                    <div className="text-3xl font-bold text-slate-900">15.000 kr</div>
-                                    <span className="text-xs text-slate-400 font-medium">Estimeret</span>
+                                    <div className="text-3xl font-bold text-slate-900">{formatDkk(potentialRevenue)}</div>
+                                    <span className="text-xs text-slate-500 font-medium">Fra lead-værdier</span>
                                </div>
                            </div>
                        </div>

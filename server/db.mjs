@@ -698,7 +698,7 @@ export async function upsertAiSettings(customerId, data) {
 }
 
 export async function getSettingsByCustomerId(customerId) {
-  const [companyRes, aiRes, customerRes] = await Promise.all([
+  const [companyRes, aiRes, customerRes, metricsRes] = await Promise.all([
     pool.query(
       "SELECT * FROM company_settings WHERE customer_id = $1 LIMIT 1",
       [customerId]
@@ -713,13 +713,27 @@ export async function getSettingsByCustomerId(customerId) {
        WHERE c.id = $1 LIMIT 1`,
       [customerId]
     ),
+    pool.query(
+      `SELECT value
+       FROM system_settings
+       WHERE key = 'dashboard_minutes_saved_per_message'
+       LIMIT 1`,
+      []
+    ),
   ]);
 
   const customerRow = customerRes.rows[0] || null;
+  const rawMinutesPerMessage = Number.parseInt(metricsRes.rows[0]?.value || "2", 10);
+  const minutesSavedPerMessage = Number.isFinite(rawMinutesPerMessage)
+    ? Math.max(1, Math.min(rawMinutesPerMessage, 60))
+    : 2;
 
   return {
     company: companyRes.rows[0] || null,
     ai: aiRes.rows[0] || null,
+    metrics: {
+      minutes_saved_per_message: minutesSavedPerMessage,
+    },
     sms: customerRow
       ? {
           provider: customerRow.sms_provider || 'twilio',

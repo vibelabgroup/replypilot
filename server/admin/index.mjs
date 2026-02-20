@@ -833,6 +833,58 @@ app.put(
   })
 );
 
+// Global dashboard metrics configuration
+app.get(
+  '/api/admin/dashboard-metrics',
+  requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const result = await query(
+      `SELECT value FROM system_settings WHERE key = 'dashboard_minutes_saved_per_message' LIMIT 1`,
+      []
+    );
+    const raw = Number.parseInt(result.rows[0]?.value || '2', 10);
+    const minutesSavedPerMessage = Number.isFinite(raw) ? Math.max(1, Math.min(raw, 60)) : 2;
+    res.json({
+      minutes_saved_per_message: minutesSavedPerMessage,
+    });
+  })
+);
+
+app.put(
+  '/api/admin/dashboard-metrics',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const raw = Number(
+      req.body?.minutes_saved_per_message ??
+        req.body?.minutesSavedPerMessage
+    );
+
+    if (!Number.isFinite(raw)) {
+      return res.status(400).json({
+        error: 'minutes_saved_per_message must be a number between 1 and 60',
+      });
+    }
+
+    const minutesSavedPerMessage = Math.max(1, Math.min(Math.round(raw), 60));
+
+    await query(
+      `
+        INSERT INTO system_settings (key, value)
+        VALUES ('dashboard_minutes_saved_per_message', $1)
+        ON CONFLICT (key) DO UPDATE
+        SET value = EXCLUDED.value,
+            updated_at = NOW()
+      `,
+      [String(minutesSavedPerMessage)]
+    );
+
+    logInfo('Updated dashboard metrics config', { minutesSavedPerMessage });
+    res.json({
+      minutes_saved_per_message: minutesSavedPerMessage,
+    });
+  })
+);
+
 // Global demo AI configuration (Replypilot's own AI profile)
 app.get(
   '/api/admin/demo-ai',
