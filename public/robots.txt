@@ -1,0 +1,25 @@
+# Allow all crawlers for indexing and social previews
+User-agent: *
+Allow: /
+
+# Explicitly allow Facebook's Open Graph / sharing crawler
+User-agent: facebookexternalhit
+Allow: /
+
+# Twitter card crawler
+User-agent: Twitterbot
+Allow: /
+
+# LinkedIn sharing
+User-agent: LinkedInBot
+Allow: /
+
+# Pinterest
+User-agent: Pinterest
+Allow: /
+
+# WhatsApp (uses similar crawlers for link previews)
+User-agent: WhatsApp
+Allow: /
+
+Sitemap: https://replypilot.dk/sitemap.xml
