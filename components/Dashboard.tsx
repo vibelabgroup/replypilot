@@ -3,10 +3,15 @@ import { Phone, Clock, TrendingUp, Settings, LogOut, MessageSquare, User, Calend
 
 interface DashboardProps {
     onLogout: () => void;
+    initialLeadId?: number | null;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = null }) => {
     const [selectedLead, setSelectedLead] = useState<any>(null);
+    const [leadTimeline, setLeadTimeline] = useState<any[]>([]);
+    const [leads, setLeads] = useState<any[]>([]);
+    const [notificationSettings, setNotificationSettings] = useState<any | null>(null);
+    const [notificationHistory, setNotificationHistory] = useState<any[]>([]);
     const [companySettings, setCompanySettings] = useState<any | null>(null);
     const [aiSettings, setAiSettings] = useState<any | null>(null);
     const [smsSettings, setSmsSettings] = useState<any | null>(null);
@@ -33,12 +38,118 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                         setFonecloudSenderId(data.sms.fonecloud_sender_id || '');
                     }
                 }
+
+                const notifRes = await fetch(`${apiBase}/api/settings/notifications`, {
+                    credentials: 'include',
+                });
+                if (notifRes.ok) {
+                    const notifData = await notifRes.json();
+                    setNotificationSettings(notifData);
+                }
             } catch (err) {
                 console.warn('Kunne ikke hente indstillinger', err);
             }
         };
         fetchSettings();
     }, []);
+
+    const loadNotificationHistory = async () => {
+        try {
+            const apiBase =
+                import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+            const res = await fetch(`${apiBase}/api/notifications/history?limit=40`, {
+                credentials: 'include',
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            setNotificationHistory(Array.isArray(data.notifications) ? data.notifications : []);
+        } catch (err) {
+            console.warn('Kunne ikke hente notifikationshistorik', err);
+        }
+    };
+
+    const mapLeadSummary = (lead: any) => ({
+        id: lead.id,
+        name: lead?.name || lead?.conversation_name || lead?.phone || 'Ukendt lead',
+        time: lead?.created_at ? new Date(lead.created_at).toLocaleString('da-DK') : '-',
+        topic: lead?.qualification || 'Nyt lead',
+        msg: lead?.last_message || 'Ingen besked endnu',
+        email: lead?.email || '-',
+        phone: lead?.phone || '-',
+        address: '-',
+        conversation_id: lead?.conversation_id || null,
+    });
+
+    const loadLeads = async () => {
+        try {
+            const apiBase =
+                import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+            const res = await fetch(`${apiBase}/api/leads?limit=50`, {
+                credentials: 'include',
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setLeads((data.leads || []).map(mapLeadSummary));
+            }
+        } catch (err) {
+            console.warn('Kunne ikke hente leads', err);
+        }
+    };
+
+    const openLead = async (lead: any) => {
+        const baseLead = mapLeadSummary(lead || {});
+        setSelectedLead(baseLead);
+        setLeadTimeline([]);
+
+        if (!baseLead.id) {
+            return;
+        }
+
+        try {
+            const apiBase =
+                import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+            const res = await fetch(`${apiBase}/api/leads/${baseLead.id}`, {
+                credentials: 'include',
+            });
+            if (!res.ok) {
+                return;
+            }
+            const data = await res.json();
+            const detailedLead = data.lead || {};
+            setSelectedLead({
+                ...baseLead,
+                name: detailedLead.name || baseLead.name,
+                topic: detailedLead.qualification || baseLead.topic,
+                msg: data.timeline?.[data.timeline.length - 1]?.content || baseLead.msg,
+                email: detailedLead.email || baseLead.email,
+                phone: detailedLead.phone || baseLead.phone,
+                address: detailedLead.address || '-',
+                summary: `Status: ${detailedLead.conversation_status || 'aktiv'}${detailedLead.converted_at ? ' (konverteret)' : ''}`,
+            });
+            setLeadTimeline(Array.isArray(data.timeline) ? data.timeline : []);
+        } catch (err) {
+            console.warn('Kunne ikke hente lead-detaljer', err);
+        }
+    };
+
+    useEffect(() => {
+        loadLeads();
+    }, []);
+
+    useEffect(() => {
+        loadNotificationHistory();
+    }, []);
+
+    useEffect(() => {
+        if (!initialLeadId) return;
+        const existingLead = leads.find((lead) => Number(lead.id) === Number(initialLeadId));
+        if (existingLead) {
+            openLead(existingLead);
+        } else if (leads.length > 0) {
+            openLead({ id: initialLeadId });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialLeadId, leads.length]);
 
     const updateCompanyField = (field: string, value: any) => {
         setCompanySettings((prev: any) => ({
@@ -117,12 +228,61 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         }
     };
 
-    const leads = [
-        { name: "Morten Jensen", time: "10:42", topic: "Nyt tag", msg: "Spørger til pris på tagrenovering af 140m2 hus...", email: "morten@mail.dk", phone: "20 30 40 50", address: "Hovedgaden 12, 4000 Roskilde" },
-        { name: "Lone Svendsen", time: "09:15", topic: "Tilbygning", msg: "Vil gerne have et tilbud på en udestue til sommerhuset.", email: "lone@mail.dk", phone: "21 31 41 51", address: "Strandvejen 4, 3000 Helsingør" },
-        { name: "Anders Møller", time: "I går", topic: "Renovering", msg: "Har brug for hjælp til nyt badeværelse hurtigst muligt.", email: "anders@mail.dk", phone: "22 32 42 52", address: "Vesterbro 8, 5000 Odense" },
-        { name: "Peter Hansen", time: "I går", topic: "Service", msg: "Spørger om I kører ud til Roskilde området?", email: "peter@mail.dk", phone: "23 33 43 53", address: "Ringvejen 2, 4600 Køge" },
-    ];
+    const updateNotificationField = (field: string, value: any) => {
+        setNotificationSettings((prev: any) => ({
+            ...(prev || {}),
+            [field]: value,
+        }));
+    };
+
+    const saveNotificationSettings = async () => {
+        try {
+            const apiBase =
+                import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+            const payload = {
+                emailEnabled: !!notificationSettings?.email_enabled,
+                emailNewLead: !!notificationSettings?.email_new_lead,
+                emailNewMessage: !!notificationSettings?.email_new_message,
+                emailDailyDigest: !!notificationSettings?.email_daily_digest,
+                emailWeeklyReport: !!notificationSettings?.email_weekly_report,
+                smsEnabled: !!notificationSettings?.sms_enabled,
+                smsPhone: notificationSettings?.sms_phone || '',
+                smsNewLead: !!notificationSettings?.sms_new_lead,
+                smsNewMessage: !!notificationSettings?.sms_new_message,
+                notifyLeadManaged: notificationSettings?.notify_lead_managed !== false,
+                notifyLeadConverted: notificationSettings?.notify_lead_converted !== false,
+                notifyAiFailed: notificationSettings?.notify_ai_failed !== false,
+                cadenceMode: notificationSettings?.cadence_mode || 'immediate',
+                cadenceIntervalMinutes: notificationSettings?.cadence_interval_minutes
+                    ? Number(notificationSettings.cadence_interval_minutes)
+                    : null,
+                maxNotificationsPerDay: notificationSettings?.max_notifications_per_day
+                    ? Number(notificationSettings.max_notifications_per_day)
+                    : null,
+                quietHoursStart: notificationSettings?.quiet_hours_start || null,
+                quietHoursEnd: notificationSettings?.quiet_hours_end || null,
+                timezone: notificationSettings?.timezone || 'Europe/Copenhagen',
+                digestType: notificationSettings?.digest_type || 'daily',
+                digestTime: notificationSettings?.digest_time || '09:00',
+            };
+
+            const res = await fetch(`${apiBase}/api/settings/notifications`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) {
+                console.error('Kunne ikke gemme notifikationsindstillinger');
+                return;
+            }
+            const data = await res.json();
+            setNotificationSettings(data);
+            await loadNotificationHistory();
+        } catch (err) {
+            console.error('Fejl ved gem af notifikationsindstillinger', err);
+        }
+    };
 
     return (
         <div className="min-h-screen bg-[#FAFAFA] font-sans text-slate-900 animate-in fade-in duration-500">
@@ -225,7 +385,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                    {leads.map((lead, i) => (
                                        <button 
                                             key={i} 
-                                            onClick={() => setSelectedLead(lead)}
+                                            onClick={() => openLead(lead)}
                                             className="w-full text-left p-6 flex items-start gap-4 hover:bg-slate-50 transition-colors cursor-pointer group focus:outline-none focus:bg-slate-50"
                                        >
                                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-slate-500 group-hover:bg-white group-hover:text-blue-600 group-hover:shadow-sm transition-all border border-transparent group-hover:border-slate-100">
@@ -307,6 +467,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                         <p className="text-sm text-slate-500 mb-2">Ingen møder i dag</p>
                                         <button className="text-xs font-bold text-blue-600 hover:text-blue-700">Synkroniser Kalender</button>
                                     </div>
+                                    <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Notifikationer</p>
+                                        <p className="text-sm text-slate-700">
+                                            Frekvens: {notificationSettings?.cadence_mode || 'immediate'}
+                                        </p>
+                                        <p className="text-xs text-slate-500 mt-1">
+                                            Kanal: {notificationSettings?.sms_enabled ? 'SMS ' : ''}{notificationSettings?.email_enabled ? 'Email' : ''}
+                                        </p>
+                                    </div>
                                 </div>
                            </div>
                        </div>
@@ -336,7 +505,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                </thead>
                                <tbody>
                                    {leads.map((lead, i) => (
-                                       <tr key={i} className="border-t last:border-b hover:bg-slate-50/60 cursor-pointer" onClick={() => setSelectedLead(lead)}>
+                                       <tr key={i} className="border-t last:border-b hover:bg-slate-50/60 cursor-pointer" onClick={() => openLead(lead)}>
                                            <td className="px-4 py-3 font-medium text-slate-900">{lead.name}</td>
                                            <td className="px-4 py-3">
                                                <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 uppercase tracking-wide">
@@ -528,6 +697,120 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                </div>
                            </div>
 
+                           <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                               <h2 className="text-lg font-bold text-slate-900 mb-1">Notifikationer</h2>
+                               <p className="text-sm text-slate-500 mb-6">
+                                   Vælg hvordan og hvor ofte du vil modtage opdateringer om leads, som AI-agenten håndterer.
+                               </p>
+                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                   <div>
+                                       <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">
+                                           Frekvens
+                                       </label>
+                                       <select
+                                           value={notificationSettings?.cadence_mode || 'immediate'}
+                                           onChange={(e) => updateNotificationField('cadence_mode', e.target.value)}
+                                           className="w-full h-10 px-3 rounded-lg bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-sm"
+                                       >
+                                           <option value="immediate">Med det samme</option>
+                                           <option value="hourly">Hver time</option>
+                                           <option value="daily">Daglig opsummering</option>
+                                           <option value="custom">Brugerdefineret interval</option>
+                                       </select>
+                                   </div>
+                                   <div>
+                                       <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">
+                                           SMS-nummer
+                                       </label>
+                                       <input
+                                           type="tel"
+                                           value={notificationSettings?.sms_phone || ''}
+                                           onChange={(e) => updateNotificationField('sms_phone', e.target.value)}
+                                           className="w-full h-10 px-3 rounded-lg bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-sm"
+                                           placeholder="+45 ..."
+                                       />
+                                   </div>
+                                   <div>
+                                       <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">
+                                           Brugerdefineret interval (minutter)
+                                       </label>
+                                       <input
+                                           type="number"
+                                           min={5}
+                                           max={1440}
+                                           value={notificationSettings?.cadence_interval_minutes ?? ''}
+                                           onChange={(e) => updateNotificationField('cadence_interval_minutes', e.target.value ? Number(e.target.value) : null)}
+                                           className="w-full h-10 px-3 rounded-lg bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-sm"
+                                       />
+                                   </div>
+                                   <div className="flex items-end gap-4">
+                                       <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                           <input
+                                               type="checkbox"
+                                               checked={!!notificationSettings?.email_enabled}
+                                               onChange={(e) => updateNotificationField('email_enabled', e.target.checked)}
+                                           />
+                                           Email
+                                       </label>
+                                       <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                           <input
+                                               type="checkbox"
+                                               checked={!!notificationSettings?.sms_enabled}
+                                               onChange={(e) => updateNotificationField('sms_enabled', e.target.checked)}
+                                           />
+                                           SMS
+                                       </label>
+                                   </div>
+                               </div>
+                               <div className="mt-5">
+                                   <button
+                                       onClick={saveNotificationSettings}
+                                       className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors"
+                                   >
+                                       Gem notifikationsindstillinger
+                                   </button>
+                               </div>
+                           </div>
+
+                           <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                               <div className="flex items-center justify-between mb-4">
+                                   <h2 className="text-lg font-bold text-slate-900">Notifikationshistorik</h2>
+                                   <button
+                                       onClick={loadNotificationHistory}
+                                       className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                                   >
+                                       Opdater
+                                   </button>
+                               </div>
+                               <div className="space-y-2 max-h-72 overflow-auto">
+                                   {notificationHistory.length === 0 ? (
+                                       <div className="text-sm text-slate-500 bg-slate-50 border border-slate-100 rounded-lg p-3">
+                                           Ingen notifikationer endnu.
+                                       </div>
+                                   ) : notificationHistory.map((item) => (
+                                       <div key={item.id} className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                                           <div className="flex items-center justify-between gap-2">
+                                               <div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                                                   {item.channel} • {item.type}
+                                               </div>
+                                               <div className={`text-[11px] font-semibold ${item.status === 'sent' ? 'text-green-700' : item.status === 'failed' ? 'text-red-700' : 'text-slate-500'}`}>
+                                                   {item.status}
+                                               </div>
+                                           </div>
+                                           <div className="text-xs text-slate-600 mt-1">
+                                               {item.payload?.summary || item.payload?.message || 'Se lead-link for detaljer'}
+                                           </div>
+                                           <div className="text-[11px] text-slate-400 mt-1">
+                                               {new Date(item.sent_at || item.created_at).toLocaleString('da-DK')}
+                                           </div>
+                                           {item.error_message ? (
+                                               <div className="text-[11px] text-red-600 mt-1">{item.error_message}</div>
+                                           ) : null}
+                                       </div>
+                                   ))}
+                               </div>
+                           </div>
+
                            <div className="flex justify-end">
                                <button
                                    onClick={saveCompanyAndAiSettings}
@@ -578,7 +861,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                    <div 
                         className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" 
-                        onClick={() => setSelectedLead(null)}
+                        onClick={() => {
+                            setSelectedLead(null);
+                            setLeadTimeline([]);
+                        }}
                    ></div>
                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                        {/* Header */}
@@ -592,7 +878,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                    <p className="text-sm text-slate-500 font-medium">Henvendelse fra {selectedLead.time}</p>
                                </div>
                            </div>
-                           <button onClick={() => setSelectedLead(null)} className="p-2 bg-white hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors shadow-sm border border-slate-200">
+                           <button onClick={() => {
+                               setSelectedLead(null);
+                               setLeadTimeline([]);
+                           }} className="p-2 bg-white hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors shadow-sm border border-slate-200">
                                <X className="w-4 h-4" />
                            </button>
                        </div>
@@ -613,6 +902,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                     <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-wide rounded-full">{selectedLead.topic}</span>
                                 </div>
                                 <p className="text-slate-700 text-sm leading-relaxed font-medium">"{selectedLead.msg}"</p>
+                                {selectedLead.summary ? (
+                                    <p className="text-xs text-slate-500 mt-3">{selectedLead.summary}</p>
+                                ) : null}
                            </div>
 
                            <div className="space-y-4 pt-2">
@@ -628,6 +920,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                 <div className="flex items-center gap-4 text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
                                     <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
                                     <span className="font-medium">{selectedLead.address}</span>
+                                </div>
+                           </div>
+
+                           <div className="space-y-2">
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aktivitetstidslinje</p>
+                                <div className="max-h-52 overflow-auto space-y-2 pr-1">
+                                    {leadTimeline.length === 0 ? (
+                                        <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                            Ingen registrerede beskeder endnu.
+                                        </div>
+                                    ) : leadTimeline.map((item) => (
+                                        <div key={item.id} className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs text-slate-600">
+                                            <div className="font-semibold text-slate-700 mb-1">
+                                                {item.sender} • {new Date(item.created_at).toLocaleString('da-DK')}
+                                            </div>
+                                            <div>{item.content}</div>
+                                        </div>
+                                    ))}
                                 </div>
                            </div>
                        </div>

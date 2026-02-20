@@ -2,6 +2,7 @@ import { query, withTransaction } from '../utils/db.mjs';
 import { logInfo, logError, logDebug } from '../utils/logger.mjs';
 import { queueSms } from '../sms/gateway.mjs';
 import { generateResponse, queueAIResponse } from './aiService.mjs';
+import { emitNotificationEvent } from './notificationService.mjs';
 
 // Get conversations for customer
 export const getConversations = async (customerId, options = {}) => {
@@ -165,6 +166,31 @@ export const closeConversation = async (customerId, conversationId) => {
 
   logInfo('Conversation closed', { customerId, conversationId });
 
+  try {
+    const leadResult = await query(
+      `SELECT id, name, phone
+       FROM leads
+       WHERE customer_id = $1 AND conversation_id = $2
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [customerId, conversationId]
+    );
+    const lead = leadResult.rows[0] || {};
+    await emitNotificationEvent(customerId, 'lead_managed', {
+      leadId: lead.id || null,
+      leadName: lead.name || null,
+      leadPhone: lead.phone || null,
+      conversationId,
+      summary: 'Samtalen er lukket af systemet.',
+    });
+  } catch (error) {
+    logError('Failed to emit closeConversation notification', {
+      customerId,
+      conversationId,
+      error: error?.message,
+    });
+  }
+
   return result.rows[0];
 };
 
@@ -305,6 +331,22 @@ export const updateLead = async (customerId, leadId, updates) => {
 
   logInfo('Lead updated', { customerId, leadId, updates });
 
+  try {
+    await emitNotificationEvent(customerId, 'lead_managed', {
+      leadId: result.rows[0].id,
+      leadName: result.rows[0].name || null,
+      leadPhone: result.rows[0].phone || null,
+      conversationId: result.rows[0].conversation_id || null,
+      summary: 'Lead-oplysninger er opdateret.',
+    });
+  } catch (error) {
+    logError('Failed to emit updateLead notification', {
+      customerId,
+      leadId,
+      error: error?.message,
+    });
+  }
+
   return result.rows[0];
 };
 
@@ -336,6 +378,23 @@ export const convertLead = async (customerId, leadId, conversionData) => {
   );
 
   logInfo('Lead converted', { customerId, leadId, convertedValue });
+
+  try {
+    await emitNotificationEvent(customerId, 'lead_converted', {
+      leadId: result.rows[0].id,
+      leadName: result.rows[0].name || null,
+      leadPhone: result.rows[0].phone || null,
+      conversationId: result.rows[0].conversation_id || null,
+      convertedValue,
+      summary: 'Leaden er markeret som konverteret.',
+    });
+  } catch (error) {
+    logError('Failed to emit convertLead notification', {
+      customerId,
+      leadId,
+      error: error?.message,
+    });
+  }
 
   return result.rows[0];
 };

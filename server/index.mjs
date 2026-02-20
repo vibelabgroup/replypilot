@@ -9,6 +9,9 @@ import { logInfo, logWarn, logError } from "./logger.mjs";
 import { handleIncomingMessage, provisionNumber } from "./sms/gateway.mjs";
 import { handleIncomingVoiceDemo } from "./services/twilioService.mjs";
 import { generateDemoLiveResponse, analyzeCompanyProfile } from "./services/aiService.mjs";
+import { getLeads } from "./services/conversationService.mjs";
+import { getNotificationPreferences, updateNotificationPreferences } from "./services/settingsService.mjs";
+import { validate, notificationPreferencesSchema } from "./utils/validators.mjs";
 import {
   initDb,
   pool,
@@ -361,7 +364,7 @@ app.post("/api/auth/logout", async (req, res) => {
   res.status(204).end();
 });
 
-app.get("/api/me", requireAuth, async (req, res) => {
+const respondWithProfile = async (req, res) => {
   try {
     const { userId, customerId } = req.auth;
 
@@ -405,7 +408,10 @@ app.get("/api/me", requireAuth, async (req, res) => {
     logError("Error in /api/me", { error: err });
     res.status(500).json({ error: "Unable to load profile" });
   }
-});
+};
+
+app.get("/api/me", requireAuth, respondWithProfile);
+app.get("/api/auth/me", requireAuth, respondWithProfile);
 
 app.get("/api/settings", requireAuth, async (req, res) => {
   try {
@@ -415,6 +421,117 @@ app.get("/api/settings", requireAuth, async (req, res) => {
   } catch (err) {
     logError("Error in GET /api/settings", { error: err });
     res.status(500).json({ error: "Unable to load settings" });
+  }
+});
+
+app.get("/api/settings/notifications", requireAuth, async (req, res) => {
+  try {
+    const { customerId, userId } = req.auth;
+    const preferences = await getNotificationPreferences(customerId, userId);
+    res.json(preferences);
+  } catch (err) {
+    logError("Error in GET /api/settings/notifications", { error: err });
+    res.status(500).json({ error: "Unable to load notification settings" });
+  }
+});
+
+app.put("/api/settings/notifications", requireAuth, async (req, res) => {
+  try {
+    const { customerId, userId } = req.auth;
+    const payload = validate(notificationPreferencesSchema, req.body || {});
+    const preferences = await updateNotificationPreferences(customerId, userId, payload);
+    res.json(preferences);
+  } catch (err) {
+    logError("Error in PUT /api/settings/notifications", { error: err });
+    const status = err?.statusCode || 500;
+    res.status(status).json({
+      error: err?.message || "Unable to update notification settings",
+      details: err?.errors || undefined,
+    });
+  }
+});
+
+app.get("/api/leads", requireAuth, async (req, res) => {
+  try {
+    const { customerId } = req.auth;
+    const limit = Math.max(1, Math.min(Number.parseInt(req.query.limit, 10) || 25, 100));
+    const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+    const qualification = typeof req.query.qualification === "string" ? req.query.qualification : undefined;
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : undefined;
+    const result = await getLeads(customerId, { limit, offset, qualification, search });
+    res.json(result);
+  } catch (err) {
+    logError("Error in GET /api/leads", { error: err });
+    res.status(500).json({ error: "Unable to load leads" });
+  }
+});
+
+app.get("/api/leads/:id", requireAuth, async (req, res) => {
+  try {
+    const { customerId } = req.auth;
+    const leadId = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(leadId)) {
+      return res.status(400).json({ error: "Invalid lead ID" });
+    }
+
+    const leadResult = await pool.query(
+      `SELECT l.*, c.status AS conversation_status, c.lead_phone, c.lead_name
+       FROM leads l
+       LEFT JOIN conversations c ON c.id = l.conversation_id
+       WHERE l.id = $1 AND l.customer_id = $2
+       LIMIT 1`,
+      [leadId, customerId]
+    );
+
+    if (leadResult.rowCount === 0) {
+      return res.status(404).json({ error: "Lead not found" });
+    }
+
+    const lead = leadResult.rows[0];
+    let messages = [];
+    if (lead.conversation_id) {
+      const messagesResult = await pool.query(
+        `SELECT id, direction, sender, content, created_at, delivery_status, delivery_error
+         FROM messages
+         WHERE conversation_id = $1
+         ORDER BY created_at ASC`,
+        [lead.conversation_id]
+      );
+      messages = messagesResult.rows;
+    }
+
+    res.json({
+      lead,
+      timeline: messages,
+      conversationId: lead.conversation_id || null,
+      dashboardLink: `${frontendUrl.replace(/\/$/, "")}/?leadId=${lead.id}${lead.conversation_id ? `&conversationId=${lead.conversation_id}` : ""}`,
+    });
+  } catch (err) {
+    logError("Error in GET /api/leads/:id", { error: err });
+    res.status(500).json({ error: "Unable to load lead details" });
+  }
+});
+
+app.get("/api/notifications/history", requireAuth, async (req, res) => {
+  try {
+    const { customerId } = req.auth;
+    const limit = Math.max(1, Math.min(Number.parseInt(req.query.limit, 10) || 50, 200));
+    const result = await pool.query(
+      `SELECT id, type, channel, status, payload, error_message, sent_at, created_at
+       FROM notification_queue
+       WHERE customer_id = $1
+       ORDER BY COALESCE(sent_at, created_at) DESC
+       LIMIT $2`,
+      [customerId, limit]
+    );
+
+    res.json({
+      notifications: result.rows,
+      total: result.rowCount,
+    });
+  } catch (err) {
+    logError("Error in GET /api/notifications/history", { error: err });
+    res.status(500).json({ error: "Unable to load notification history" });
   }
 });
 
@@ -587,6 +704,49 @@ app.put("/api/settings", requireAuth, async (req, res) => {
   } catch (err) {
     logError("Error in PUT /api/settings", { error: err });
     res.status(500).json({ error: "Unable to save settings" });
+  }
+});
+
+app.put("/api/settings/company", requireAuth, async (req, res) => {
+  try {
+    const { customerId } = req.auth;
+    const payload = req.body || {};
+    const companyData = {
+      company_name: payload.companyName ?? payload.company_name ?? null,
+      phone_number: payload.phoneNumber ?? payload.phone_number ?? null,
+      address: payload.address ?? null,
+      opening_hours: payload.openingHours ?? payload.opening_hours ?? null,
+      forwarding_number: payload.forwardingNumber ?? payload.forwarding_number ?? null,
+      email_forward: payload.emailForward ?? payload.email_forward ?? null,
+      notes: payload.notes ?? null,
+    };
+    const company = await upsertCompanySettings(customerId, companyData);
+    res.json(company);
+  } catch (err) {
+    logError("Error in PUT /api/settings/company", { error: err });
+    res.status(500).json({ error: "Unable to save company settings" });
+  }
+});
+
+app.put("/api/settings/ai", requireAuth, async (req, res) => {
+  try {
+    const { customerId } = req.auth;
+    const payload = req.body || {};
+    const aiData = {
+      agent_name: payload.agentName ?? payload.agent_name ?? null,
+      tone: payload.responseTone ?? payload.tone ?? null,
+      language: payload.language ?? null,
+      custom_instructions: payload.systemPrompt ?? payload.custom_instructions ?? null,
+      max_message_length: payload.maxTokens ?? payload.max_message_length ?? null,
+      fallback_message: payload.fallbackMessage ?? payload.fallback_message ?? null,
+      primary_provider: payload.primaryProvider ?? payload.primary_provider ?? 'gemini',
+      secondary_provider: payload.secondaryProvider ?? payload.secondary_provider ?? null,
+    };
+    const ai = await upsertAiSettings(customerId, aiData);
+    res.json(ai);
+  } catch (err) {
+    logError("Error in PUT /api/settings/ai", { error: err });
+    res.status(500).json({ error: "Unable to save AI settings" });
   }
 });
 

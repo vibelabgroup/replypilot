@@ -27,10 +27,35 @@ const App: React.FC = () => {
     const [showDashboard, setShowDashboard] = useState(false);
     const [showAuth, setShowAuth] = useState(false);
     const [subscriptionChecked, setSubscriptionChecked] = useState(false);
+    const [initialLeadId, setInitialLeadId] = useState<number | null>(null);
 
     // Fade-in animation observer
     useEffect(() => {
         const run = async () => {
+            const leadParam = new URLSearchParams(window.location.search).get('leadId');
+            const parsedLead = leadParam ? Number.parseInt(leadParam, 10) : null;
+            if (parsedLead && Number.isFinite(parsedLead)) {
+                setInitialLeadId(parsedLead);
+            }
+
+            // Restore authenticated dashboard session only for deep links.
+            if (parsedLead && Number.isFinite(parsedLead)) {
+                try {
+                    const apiBase =
+                        import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+                    const profileRes = await fetch(`${apiBase}/api/auth/me`, {
+                        credentials: 'include',
+                    });
+                    if (profileRes.ok) {
+                        setShowDashboard(true);
+                        setSubscriptionChecked(true);
+                        return;
+                    }
+                } catch {
+                    // Ignore and continue to existing flow.
+                }
+            }
+
             // Detect Stripe checkout success redirect
             const params = new URLSearchParams(window.location.search);
             const isSuccess = params.get('checkout') === 'success';
@@ -113,7 +138,7 @@ const App: React.FC = () => {
     };
 
     if (showDashboard) {
-        return <Dashboard onLogout={handleLogout} />;
+        return <Dashboard onLogout={handleLogout} initialLeadId={initialLeadId} />;
     }
 
     // Prevent flicker during initial subscription check

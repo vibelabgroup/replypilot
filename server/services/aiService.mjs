@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { query } from '../utils/db.mjs';
 import { logInfo, logError, logDebug } from '../utils/logger.mjs';
 import { enqueueJob } from '../utils/redis.mjs';
+import { emitNotificationEvent } from './notificationService.mjs';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -754,6 +755,36 @@ export const processAIGenerationJob = async (job) => {
         conversationId,
         messageId: messageResult.rows[0].id,
       },
+    });
+  }
+
+  try {
+    const leadResult = await query(
+      `SELECT id, name, phone
+       FROM leads
+       WHERE customer_id = $1 AND conversation_id = $2
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [customerId, conversationId]
+    );
+    const lead = leadResult.rows[0] || {};
+    const eventType = result.success ? 'lead_managed' : 'ai_failed';
+    await emitNotificationEvent(customerId, eventType, {
+      leadId: lead.id || null,
+      leadName: lead.name || null,
+      leadPhone: lead.phone || conversation.rows[0]?.lead_phone || null,
+      conversationId,
+      summary: result.success
+        ? 'AI-agenten har håndteret leadet og sendt et svar.'
+        : 'AI-agenten brugte fallback-besked til leadet.',
+      error: result.error || null,
+      isFallback: !!result.isFallback,
+    });
+  } catch (notificationError) {
+    logError('Failed to emit AI lifecycle notification', {
+      customerId,
+      conversationId,
+      error: notificationError?.message,
     });
   }
 

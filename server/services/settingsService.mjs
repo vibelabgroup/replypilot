@@ -179,6 +179,15 @@ export const updateNotificationPreferences = async (customerId, userId, data) =>
     smsPhone,
     smsNewLead,
     smsNewMessage,
+    notifyLeadManaged,
+    notifyLeadConverted,
+    notifyAiFailed,
+    cadenceMode,
+    cadenceIntervalMinutes,
+    maxNotificationsPerDay,
+    quietHoursStart,
+    quietHoursEnd,
+    timezone,
     digestType,
     digestTime,
   } = data;
@@ -187,9 +196,11 @@ export const updateNotificationPreferences = async (customerId, userId, data) =>
     `INSERT INTO notification_preferences (
        customer_id, user_id, email_enabled, email_new_lead, email_new_message,
        email_daily_digest, email_weekly_report, sms_enabled, sms_phone,
-       sms_new_lead, sms_new_message, digest_type, digest_time
+       sms_new_lead, sms_new_message, notify_lead_managed, notify_lead_converted,
+       notify_ai_failed, cadence_mode, cadence_interval_minutes, max_notifications_per_day,
+       quiet_hours_start, quiet_hours_end, timezone, digest_type, digest_time
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
      ON CONFLICT (customer_id, user_id) DO UPDATE SET
        email_enabled = EXCLUDED.email_enabled,
        email_new_lead = EXCLUDED.email_new_lead,
@@ -200,6 +211,15 @@ export const updateNotificationPreferences = async (customerId, userId, data) =>
        sms_phone = EXCLUDED.sms_phone,
        sms_new_lead = EXCLUDED.sms_new_lead,
        sms_new_message = EXCLUDED.sms_new_message,
+       notify_lead_managed = EXCLUDED.notify_lead_managed,
+       notify_lead_converted = EXCLUDED.notify_lead_converted,
+       notify_ai_failed = EXCLUDED.notify_ai_failed,
+       cadence_mode = EXCLUDED.cadence_mode,
+       cadence_interval_minutes = EXCLUDED.cadence_interval_minutes,
+       max_notifications_per_day = EXCLUDED.max_notifications_per_day,
+       quiet_hours_start = EXCLUDED.quiet_hours_start,
+       quiet_hours_end = EXCLUDED.quiet_hours_end,
+       timezone = EXCLUDED.timezone,
        digest_type = EXCLUDED.digest_type,
        digest_time = EXCLUDED.digest_time,
        updated_at = NOW()
@@ -216,6 +236,15 @@ export const updateNotificationPreferences = async (customerId, userId, data) =>
       smsPhone,
       smsNewLead,
       smsNewMessage,
+      notifyLeadManaged,
+      notifyLeadConverted,
+      notifyAiFailed,
+      cadenceMode,
+      cadenceIntervalMinutes,
+      maxNotificationsPerDay,
+      quietHoursStart || null,
+      quietHoursEnd || null,
+      timezone || 'Europe/Copenhagen',
       digestType,
       digestTime,
     ]
@@ -415,6 +444,15 @@ const getDefaultNotificationPreferences = (customerId, userId) => ({
   sms_phone: null,
   sms_new_lead: true,
   sms_new_message: false,
+  notify_lead_managed: true,
+  notify_lead_converted: true,
+  notify_ai_failed: true,
+  cadence_mode: 'immediate',
+  cadence_interval_minutes: null,
+  max_notifications_per_day: null,
+  quiet_hours_start: null,
+  quiet_hours_end: null,
+  timezone: 'Europe/Copenhagen',
   digest_type: 'daily',
   digest_time: '09:00',
 });

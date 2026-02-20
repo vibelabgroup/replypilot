@@ -45,6 +45,7 @@ export const applyInboundMessage = async (
   );
 
   let conversationId;
+  let leadId = null;
 
   if (conversationResult.rowCount === 0) {
     // Create new conversation
@@ -57,20 +58,31 @@ export const applyInboundMessage = async (
     conversationId = newConversation.rows[0].id;
 
     // Create lead
-    await client.query(
+    const leadResult = await client.query(
       `INSERT INTO leads (customer_id, conversation_id, phone, source)
-       VALUES ($1, $2, $3, 'sms')`,
+       VALUES ($1, $2, $3, 'sms')
+       RETURNING id`,
       [customerId, conversationId, from]
     );
+    leadId = leadResult.rows[0]?.id || null;
 
     // Queue notification for new lead
     await queueNotification(customerId, 'new_lead', {
       conversationId,
+      leadId,
       leadPhone: from,
       message: body,
     });
   } else {
     conversationId = conversationResult.rows[0].id;
+    const leadResult = await client.query(
+      `SELECT id FROM leads
+       WHERE customer_id = $1 AND conversation_id = $2
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [customerId, conversationId]
+    );
+    leadId = leadResult.rows[0]?.id || null;
   }
 
   // Store incoming message
@@ -116,6 +128,7 @@ export const applyInboundMessage = async (
   // Queue notification
   await queueNotification(customerId, 'new_message', {
     conversationId,
+    leadId,
     messageId,
     leadPhone: from,
     message: body,

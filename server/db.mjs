@@ -258,10 +258,75 @@ export async function initDb() {
       sms_new_message BOOLEAN DEFAULT FALSE,
       digest_type TEXT DEFAULT 'daily',
       digest_time TIME DEFAULT '09:00',
+      cadence_mode VARCHAR(20) NOT NULL DEFAULT 'immediate',
+      cadence_interval_minutes INTEGER,
+      max_notifications_per_day INTEGER,
+      quiet_hours_start TIME,
+      quiet_hours_end TIME,
+      timezone VARCHAR(64) NOT NULL DEFAULT 'Europe/Copenhagen',
+      notify_lead_managed BOOLEAN NOT NULL DEFAULT TRUE,
+      notify_lead_converted BOOLEAN NOT NULL DEFAULT TRUE,
+      notify_ai_failed BOOLEAN NOT NULL DEFAULT TRUE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(customer_id, user_id)
     );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notification_queue (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      type VARCHAR(50) NOT NULL,
+      channel VARCHAR(20) NOT NULL,
+      status VARCHAR(20) DEFAULT 'pending',
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      error_message TEXT,
+      scheduled_for TIMESTAMPTZ,
+      sent_at TIMESTAMPTZ,
+      retry_count INTEGER DEFAULT 0,
+      max_retries INTEGER DEFAULT 3,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_notification_queue_status
+      ON notification_queue(status, scheduled_for);
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notification_digest_buckets (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      channel VARCHAR(20) NOT NULL,
+      event_types JSONB NOT NULL DEFAULT '[]',
+      events JSONB NOT NULL DEFAULT '[]',
+      event_count INTEGER NOT NULL DEFAULT 0,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      window_start TIMESTAMPTZ NOT NULL,
+      window_end TIMESTAMPTZ NOT NULL,
+      scheduled_for TIMESTAMPTZ NOT NULL,
+      sent_at TIMESTAMPTZ,
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 3,
+      error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_notification_digest_buckets_due
+      ON notification_digest_buckets(status, scheduled_for);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_notification_digest_buckets_customer
+      ON notification_digest_buckets(customer_id, status, window_end DESC);
   `);
 
   // Ensure SMS multi-provider columns exist on existing databases as well.
@@ -304,6 +369,36 @@ export async function initDb() {
       END IF;
     END
     $$;
+  `);
+
+  await pool.query(`
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_status VARCHAR(20) DEFAULT 'pending';
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_error TEXT;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS twilio_status VARCHAR(50);
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS failed_at TIMESTAMPTZ;
+  `);
+
+  await pool.query(`
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS notes TEXT;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS estimated_value NUMERIC(12,2);
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS converted_at TIMESTAMPTZ;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS converted_value NUMERIC(12,2);
+  `);
+
+  await pool.query(`
+    ALTER TABLE notification_preferences
+      ADD COLUMN IF NOT EXISTS cadence_mode VARCHAR(20) NOT NULL DEFAULT 'immediate',
+      ADD COLUMN IF NOT EXISTS cadence_interval_minutes INTEGER,
+      ADD COLUMN IF NOT EXISTS max_notifications_per_day INTEGER,
+      ADD COLUMN IF NOT EXISTS quiet_hours_start TIME,
+      ADD COLUMN IF NOT EXISTS quiet_hours_end TIME,
+      ADD COLUMN IF NOT EXISTS timezone VARCHAR(64) NOT NULL DEFAULT 'Europe/Copenhagen',
+      ADD COLUMN IF NOT EXISTS notify_lead_managed BOOLEAN NOT NULL DEFAULT TRUE,
+      ADD COLUMN IF NOT EXISTS notify_lead_converted BOOLEAN NOT NULL DEFAULT TRUE,
+      ADD COLUMN IF NOT EXISTS notify_ai_failed BOOLEAN NOT NULL DEFAULT TRUE;
   `);
 
   // Ensure messages has provider_message_id and sms_provider columns for multi-provider support.
@@ -568,10 +663,11 @@ export async function upsertAiSettings(customerId, data) {
         language,
         custom_instructions,
         max_message_length,
+        fallback_message,
         primary_provider,
         secondary_provider
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       ON CONFLICT (customer_id) DO UPDATE
       SET
         agent_name = EXCLUDED.agent_name,
@@ -579,6 +675,7 @@ export async function upsertAiSettings(customerId, data) {
         language = EXCLUDED.language,
         custom_instructions = EXCLUDED.custom_instructions,
         max_message_length = EXCLUDED.max_message_length,
+        fallback_message = EXCLUDED.fallback_message,
         primary_provider = EXCLUDED.primary_provider,
         secondary_provider = EXCLUDED.secondary_provider,
         updated_at = NOW()
@@ -591,6 +688,7 @@ export async function upsertAiSettings(customerId, data) {
       data.language || null,
       data.custom_instructions || null,
       data.max_message_length || null,
+      data.fallback_message || null,
       data.primary_provider || 'gemini',
       data.secondary_provider || null,
     ]
