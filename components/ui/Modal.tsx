@@ -1,73 +1,65 @@
 import React, { useState } from 'react';
 import { X, Loader2, CheckCircle2 } from 'lucide-react';
+import { trackEvent } from '../../services/telemetry';
 
 interface ModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onPaymentComplete: () => void;
+    onAuthenticated: () => void;
 }
 
-export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onPaymentComplete }) => {
+export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onAuthenticated }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
-    const [acceptedTerms, setAcceptedTerms] = useState(false);
-    const [acceptedDpa, setAcceptedDpa] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     // Pre-filled for better demo experience
     const [formData, setFormData] = useState({
         name: 'Mester Hansen',
         email: 'mester@hansen-byg.dk',
-        phone: '20304050'
+        phone: '20304050',
+        password: '',
     });
 
     if (!isOpen) return null;
 
-    const handlePayment = async (e: React.FormEvent) => {
+    const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError(null);
         setIsLoading(true);
         try {
+            trackEvent('signup_started');
             setIsSuccess(true);
 
-            // Persist email locally so we can later verify subscription status
-            try {
-                window.localStorage.setItem('replypilot_email', formData.email);
-            } catch {
-                // Ignore storage errors; flow still continues
-            }
+            const apiBase = window.location.origin.replace(/\/$/, "");
 
-            const apiBase =
-                import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
-
-            const response = await fetch(`${apiBase}/create-checkout-session`, {
+            const response = await fetch(`${apiBase}/api/auth/signup`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
+                credentials: "include",
                 body: JSON.stringify({
                     name: formData.name,
                     email: formData.email,
                     phone: formData.phone,
-                    acceptedTerms,
-                    acceptedDpa,
+                    password: formData.password,
                 }),
             });
 
             if (!response.ok) {
-                throw new Error("Kunne ikke starte Stripe betaling");
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body?.error || "Kunne ikke oprette konto");
             }
 
-            const data = await response.json();
-            if (!data.url) {
-                throw new Error("Ugyldigt svar fra betalingsserver");
-            }
-
-            // Redirect to Stripe-hosted checkout page
-            window.location.href = data.url;
+            trackEvent('signup_completed');
+            onAuthenticated();
 
         } catch (error) {
-            console.error(error);
-            alert("Noget gik galt med betalingen. Prøv venligst igen.");
+            const message = error instanceof Error ? error.message : "Noget gik galt. Prøv venligst igen.";
+            setError(message);
             setIsLoading(false);
+            setIsSuccess(false);
         }
     };
 
@@ -89,7 +81,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onPaymentComplete
                         </div>
                         <h3 className="text-2xl font-bold text-slate-900 mb-2">Sender dig til betaling</h3>
                         <p className="text-slate-500">
-                            Vi sender dig nu videre til Stripe, hvor selve betalingen gennemføres sikkert. Luk ikke dette vindue, mens vi omdirigerer dig.
+                            Konto oprettet. Vi klargør onboarding-flowet til dig.
                         </p>
                         <div className="mt-8 flex justify-center">
                             <Loader2 className="w-6 h-6 text-slate-300 animate-spin" />
@@ -102,11 +94,11 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onPaymentComplete
                                 Opret din konto
                             </h3>
                             <p className="text-slate-500 text-sm">
-                                Start med dine kontaktoplysninger. Selve betalingen håndteres sikkert af Stripe.
+                                Start med dine kontaktoplysninger. Betaling aktiveres senere i dashboardet.
                             </p>
                         </div>
 
-                        <form onSubmit={handlePayment} className="space-y-4">
+                        <form onSubmit={handleSignup} className="space-y-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">Navn</label>
                                     <input 
@@ -140,46 +132,27 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onPaymentComplete
                                         onChange={e => setFormData({...formData, phone: e.target.value})}
                                     />
                                 </div>
-
-                                <div className="space-y-3 mt-4">
-                                    <label className="flex items-start gap-3 cursor-pointer group">
-                                        <input
-                                            type="checkbox"
-                                            checked={acceptedTerms}
-                                            onChange={(e) => setAcceptedTerms(e.target.checked)}
-                                            className="mt-1 w-4 h-4 rounded border-slate-300 text-black focus:ring-black"
-                                        />
-                                        <span className="text-sm text-slate-600 group-hover:text-slate-900">
-                                            Jeg accepterer{' '}
-                                            <a href="/handelsbetingelser" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium" onClick={(e) => e.stopPropagation()}>
-                                                handelsbetingelserne
-                                            </a>
-                                            .
-                                        </span>
-                                    </label>
-                                    <label className="flex items-start gap-3 cursor-pointer group">
-                                        <input
-                                            type="checkbox"
-                                            checked={acceptedDpa}
-                                            onChange={(e) => setAcceptedDpa(e.target.checked)}
-                                            className="mt-1 w-4 h-4 rounded border-slate-300 text-black focus:ring-black"
-                                        />
-                                        <span className="text-sm text-slate-600 group-hover:text-slate-900">
-                                            Jeg accepterer{' '}
-                                            <a href="/databehandleraftale" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium" onClick={(e) => e.stopPropagation()}>
-                                                databehandleraftalen (DPA)
-                                            </a>
-                                            .
-                                        </span>
-                                    </label>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">Adgangskode</label>
+                                    <input
+                                        type="password"
+                                        required
+                                        minLength={6}
+                                        className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                                        placeholder="Mindst 6 tegn"
+                                        value={formData.password}
+                                        onChange={e => setFormData({ ...formData, password: e.target.value })}
+                                    />
                                 </div>
+
+                                {error && <p className="text-sm text-red-600">{error}</p>}
 
                                 <button 
                                     type="submit" 
-                                    disabled={isLoading || !acceptedTerms || !acceptedDpa}
+                                    disabled={isLoading}
                                     className="w-full h-14 mt-4 bg-black text-white font-bold rounded-xl hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
                                 >
-                                    {isLoading ? <Loader2 className="animate-spin w-5 h-5" /> : 'Betal & Start'}
+                                    {isLoading ? <Loader2 className="animate-spin w-5 h-5" /> : 'Opret konto & Start'}
                                 </button>
                             </form>
                         </>

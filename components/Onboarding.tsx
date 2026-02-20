@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { OnboardingData } from '../types';
 import { Bot, Building2, CheckCircle2, ChevronRight, Bell, Sparkles, Smartphone, Globe, Search, Database, Mail, MessageSquare, Loader2, MapPin, Calendar, FileText, BadgeCheck, Map, Clock, Pencil, ExternalLink } from 'lucide-react';
 import { analyzeCompanyInfo } from '../services/aiService';
+import { trackEvent } from '../services/telemetry';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, '');
 
@@ -50,12 +51,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     // We either load an existing one or provision a new one
     // when onboarding is completed.
     const [twilioNumber, setTwilioNumber] = useState<string | null>(null);
-    const [provisioningNumber, setProvisioningNumber] = useState(false);
-    const [phoneNumberError, setPhoneNumberError] = useState<string | null>(null);
-
-    // Step 4: acceptance of terms and DPA before completing onboarding
-    const [acceptedTerms, setAcceptedTerms] = useState(false);
-    const [acceptedDpa, setAcceptedDpa] = useState(false);
+    const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [saveError, setSaveError] = useState<string | null>(null);
 
     // Preload any existing settings so onboarding "remembers" what was entered
     useEffect(() => {
@@ -133,6 +130,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
     const handleAnalyze = async () => {
         if (!data.companyName) return;
+        trackEvent('onboarding_analysis_started');
         
         setViewState('analyzing');
 
@@ -171,11 +169,10 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         }));
 
         setViewState('results');
+        trackEvent('onboarding_analysis_completed');
     };
 
-    // Persist current onboarding configuration to backend settings.
-    const saveSettings = async () => {
-        // Normalize website to a valid URL or empty string
+    const buildDraftPayload = () => {
         const rawWebsite = data.website?.trim() || '';
         const website =
             !rawWebsite
@@ -184,15 +181,13 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     ? rawWebsite
                     : `https://${rawWebsite}`;
 
-        // Company settings payload (matches companySettingsSchema)
-        const companyPayload = {
+        const company = {
             companyName: data.companyName || 'Min virksomhed',
             website,
             industry: data.industry || undefined,
             address: data.address || undefined,
         };
 
-        // Build a rich system prompt for the AI based on onboarding data
         const servicesText = (data.servicesList || []).join(', ');
         const opening = data.openingHours || 'Man-fre 08-16';
         const description = data.description || 'Ingen specifik beskrivelse angivet.';
@@ -210,8 +205,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
             .filter(Boolean)
             .join(' ');
 
-        // AI settings payload (matches aiSettingsSchema)
-        const aiPayload = {
+        const ai = {
             systemPrompt,
             responseTone: (data.tone as any) || 'professional',
             language: 'da',
@@ -222,8 +216,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                 'Tak for din henvendelse. Vi vender tilbage hurtigst muligt med et konkret svar.',
         };
 
-        // Notification preferences payload (matches notificationPreferencesSchema)
-        const notifPayload = {
+        const notifications = {
             emailEnabled: !!data.notifications.email,
             emailNewLead: true,
             emailNewMessage: false,
@@ -237,98 +230,73 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
             digestTime: '09:00',
         };
 
-        await Promise.all([
-            fetch(`${API_BASE}/api/settings/company`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify(companyPayload),
-            }).catch((err) => {
-                console.error('Failed to save company settings from onboarding', err);
-            }),
-            fetch(`${API_BASE}/api/settings/ai`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify(aiPayload),
-            }).catch((err) => {
-                console.error('Failed to save AI settings from onboarding', err);
-            }),
-            fetch(`${API_BASE}/api/settings/notifications`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify(notifPayload),
-            }).catch((err) => {
-                console.error('Failed to save notification settings from onboarding', err);
-            }),
-        ]);
+        return { company, ai, notifications };
     };
 
-    const handleNext = async () => {
-        // When finishing notifications (step 3), make sure we have
-        // a Twilio number provisioned before showing the forwarding code.
-        if (step === 3) {
+    // Persist current onboarding configuration as a draft from step 1 onward.
+    const saveSettings = async () => {
+        setSaveState('saving');
+        setSaveError(null);
+        const res = await fetch(`${API_BASE}/api/onboarding/draft`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(buildDraftPayload()),
+        });
+
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body?.error || 'Kunne ikke gemme onboarding');
+        }
+        setSaveState('saved');
+    };
+
+    useEffect(() => {
+        if (step < 1) return;
+        const timer = window.setTimeout(async () => {
             try {
-                setProvisioningNumber(true);
-                setPhoneNumberError(null);
-
-                // 1) Check if a number already exists
-                const existingRes = await fetch(`${API_BASE}/api/phone-numbers`, {
-                    credentials: 'include',
-                }).catch(() => null);
-
-                let number: string | null = null;
-
-                if (existingRes && existingRes.ok) {
-                    const body = await existingRes.json().catch(() => null);
-                    const list = body?.phoneNumbers || [];
-                    if (list.length > 0 && list[0]?.phone_number) {
-                        number = list[0].phone_number;
-                    }
-                }
-
-                // 2) If no number yet, provision one now for this tenant (Twilio buy or Fonecloud allocate)
-                if (!number) {
-                    const provisionRes = await fetch(`${API_BASE}/api/phone-numbers`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                    }).catch(() => null);
-
-                    if (provisionRes && provisionRes.ok) {
-                        const body = await provisionRes.json().catch(() => null);
-                        number = body?.phoneNumber || body?.phone_number || null;
-                    } else {
-                        const errBody = await provisionRes?.json().catch(() => ({}));
-                        const msg = errBody?.error || provisionRes?.statusText || '';
-                        if (provisionRes?.status === 503 || msg.toLowerCase().includes('no fonecloud numbers') || msg.toLowerCase().includes('no numbers available')) {
-                            setPhoneNumberError('Ingen ledige telefonnumre i puljen lige nu. Kontakt support for at få tildelt et nummer.');
-                        } else {
-                            setPhoneNumberError(msg || 'Kunne ikke tilknytte telefonnummer. Prøv igen eller kontakt support.');
-                        }
-                        console.error('Failed to provision phone number during onboarding', msg);
-                    }
-                }
-
-                if (number) {
-                    setTwilioNumber(number);
-                }
-
-                // After notifications and phone-number provisioning, persist
-                // the full onboarding configuration so it is always available
-                // in the dashboard, even if the user closes the wizard early.
                 await saveSettings();
             } catch (err) {
-                console.error('Error ensuring phone number during onboarding', err);
-                setPhoneNumberError('Der opstod en fejl. Prøv igen eller kontakt support.');
-            } finally {
-                setProvisioningNumber(false);
+                console.error('Autosave failed', err);
+                setSaveState('error');
+                setSaveError('Autosave fejlede. Prøv igen.');
+            }
+        }, 800);
+
+        return () => window.clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        data.companyName,
+        data.website,
+        data.industry,
+        data.description,
+        data.address,
+        data.serviceArea,
+        data.openingHours,
+        data.assistantName,
+        data.tone,
+        data.notifications.sms,
+        data.notifications.email,
+        data.notifications.phoneNumber,
+        data.notifications.emailAddress,
+        step,
+        viewState,
+    ]);
+
+    const handleNext = async () => {
+        if (step === 3) {
+            try {
+                await saveSettings();
+            } catch (err) {
+                console.error('Error saving onboarding settings', err);
+                setSaveState('error');
+                setSaveError('Der opstod en fejl ved gemning. Du kan fortsætte, men ændringer kan mangle.');
             }
         }
 
         if (step < 4) {
             setStep(prev => prev + 1);
+            trackEvent('onboarding_step_completed', { step });
         }
     };
 
@@ -690,9 +658,9 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                 </div>
             </div>
 
-            {phoneNumberError && (
+            {saveError && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                    {phoneNumberError}
+                    {saveError}
                 </div>
             )}
         </div>
@@ -703,6 +671,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         // the dashboard "Konfigurer" views are already pre-filled.
         try {
             await saveSettings();
+            trackEvent('onboarding_completed');
         } catch (err) {
             console.error('Onboarding settings save failed', err);
             // We still allow the user to proceed to dashboard even if
@@ -778,43 +747,9 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                 </div>
             )}
 
-             <div className="space-y-3 max-w-sm mx-auto text-left my-6">
-                <label className="flex items-start gap-3 cursor-pointer group">
-                    <input
-                        type="checkbox"
-                        checked={acceptedTerms}
-                        onChange={(e) => setAcceptedTerms(e.target.checked)}
-                        className="mt-1 w-4 h-4 rounded border-slate-300 text-black focus:ring-black"
-                    />
-                    <span className="text-sm text-slate-600 group-hover:text-slate-900">
-                        Jeg har læst og accepterer{' '}
-                        <a href="/handelsbetingelser" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium" onClick={(e) => e.stopPropagation()}>
-                            handelsbetingelserne
-                        </a>
-                        .
-                    </span>
-                </label>
-                <label className="flex items-start gap-3 cursor-pointer group">
-                    <input
-                        type="checkbox"
-                        checked={acceptedDpa}
-                        onChange={(e) => setAcceptedDpa(e.target.checked)}
-                        className="mt-1 w-4 h-4 rounded border-slate-300 text-black focus:ring-black"
-                    />
-                    <span className="text-sm text-slate-600 group-hover:text-slate-900">
-                        Jeg har læst og accepterer{' '}
-                        <a href="/databehandleraftale" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium" onClick={(e) => e.stopPropagation()}>
-                            databehandleraftalen (DPA)
-                        </a>
-                        .
-                    </span>
-                </label>
-             </div>
-
              <button 
                 onClick={handleComplete}
-                disabled={!acceptedTerms || !acceptedDpa}
-                className="text-slate-500 hover:text-slate-900 font-medium text-sm flex items-center justify-center gap-1 mx-auto group cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="text-slate-500 hover:text-slate-900 font-medium text-sm flex items-center justify-center gap-1 mx-auto group cursor-pointer"
              >
                 Gå til dashboard <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
              </button>
@@ -831,6 +766,9 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                     <span className="font-bold text-slate-900">Replypilot</span>
                 </div>
                 <div className="flex items-center gap-4">
+                    <div className="text-xs text-slate-500">
+                        {saveState === 'saving' ? 'Gemmer...' : saveState === 'saved' ? 'Gemt' : saveState === 'error' ? 'Ikke gemt' : ''}
+                    </div>
                     <div className="hidden md:flex items-center gap-2">
                         <span className={`w-2 h-2 rounded-full ${step >= 1 ? 'bg-blue-600' : 'bg-slate-200'}`}></span>
                         <span className={`w-2 h-2 rounded-full ${step >= 2 ? 'bg-blue-600' : 'bg-slate-200'}`}></span>
@@ -866,12 +804,12 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                                 disabled={
                                     (step === 1 && viewState !== 'results') ||
                                     (step === 2 && !data.assistantName) ||
-                                    (step === 3 && ((!data.notifications.sms && !data.notifications.email) || provisioningNumber))
+                                    (step === 3 && (!data.notifications.sms && !data.notifications.email))
                                 }
                                 className="bg-black text-white px-8 py-4 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-slate-200 hover:-translate-y-1"
                             >
                                 {step === 3
-                                    ? (provisioningNumber ? 'Tilknyt telefonnummer...' : 'Afslut opsætning')
+                                    ? 'Afslut opsætning'
                                     : 'Næste trin'}
                                 <ChevronRight className="w-5 h-5" />
                             </button>

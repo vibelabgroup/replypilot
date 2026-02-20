@@ -1,12 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { Phone, Clock, TrendingUp, Settings, LogOut, MessageSquare, User, Calendar, Mail, MapPin, X, ChevronRight as ChevronRightIcon } from 'lucide-react';
+import { trackEvent } from '../services/telemetry';
 
 interface DashboardProps {
     onLogout: () => void;
     initialLeadId?: number | null;
+    hasActiveSubscription: boolean;
+    onStartCheckout: (acceptedTerms: boolean, acceptedDpa: boolean) => Promise<void>;
+    onRefreshEntitlement: () => Promise<'unknown' | 'unpaid' | 'paid'>;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = null }) => {
+export const Dashboard: React.FC<DashboardProps> = ({
+    onLogout,
+    initialLeadId = null,
+    hasActiveSubscription,
+    onStartCheckout,
+    onRefreshEntitlement,
+}) => {
     const [selectedLead, setSelectedLead] = useState<any>(null);
     const [leadTimeline, setLeadTimeline] = useState<any[]>([]);
     const [leads, setLeads] = useState<any[]>([]);
@@ -19,6 +29,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = 
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [smsProvider, setSmsProvider] = useState<'twilio' | 'fonecloud'>('twilio');
     const [fonecloudSenderId, setFonecloudSenderId] = useState('');
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
+    const [acceptedDpa, setAcceptedDpa] = useState(false);
+    const [checkoutLoading, setCheckoutLoading] = useState(false);
+    const [checkoutError, setCheckoutError] = useState<string | null>(null);
+    const [refreshingEntitlement, setRefreshingEntitlement] = useState(false);
+    const isLocked = !hasActiveSubscription;
+
+    useEffect(() => {
+        if (isLocked) {
+            trackEvent('dashboard_unpaid_viewed');
+        } else {
+            trackEvent('dashboard_unlocked');
+        }
+    }, [isLocked]);
 
     useEffect(() => {
         const fetchSettings = async () => {
@@ -97,6 +121,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = 
     };
 
     const openLead = async (lead: any) => {
+        if (isLocked) {
+            return;
+        }
         const baseLead = mapLeadSummary(lead || {});
         setSelectedLead(baseLead);
         setLeadTimeline([]);
@@ -133,12 +160,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = 
     };
 
     useEffect(() => {
+        if (isLocked) {
+            setLeads([]);
+            return;
+        }
         loadLeads();
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLocked]);
 
     useEffect(() => {
+        if (isLocked) {
+            setNotificationHistory([]);
+            return;
+        }
         loadNotificationHistory();
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLocked]);
 
     useEffect(() => {
         if (!initialLeadId) return;
@@ -284,6 +321,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = 
         }
     };
 
+    const handleStartCheckout = async () => {
+        setCheckoutError(null);
+        setCheckoutLoading(true);
+        try {
+            trackEvent('checkout_started_from_dashboard');
+            await onStartCheckout(acceptedTerms, acceptedDpa);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Kunne ikke starte betaling';
+            setCheckoutError(message);
+            setCheckoutLoading(false);
+        }
+    };
+
+    const handleRefreshEntitlement = async () => {
+        setRefreshingEntitlement(true);
+        try {
+            await onRefreshEntitlement();
+        } finally {
+            setRefreshingEntitlement(false);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-[#FAFAFA] font-sans text-slate-900 animate-in fade-in duration-500">
            {/* Navigation */}
@@ -337,6 +396,61 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = 
            </nav>
 
            <div className="pt-24 pb-12 px-6 max-w-7xl mx-auto">
+               {isLocked && (
+                   <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                           <div>
+                               <h3 className="text-base font-bold text-amber-900">Aktivering mangler</h3>
+                               <p className="text-sm text-amber-800">
+                                   Du kan se en forhåndsvisning af dashboardet, men funktioner er låst indtil betaling er gennemført.
+                               </p>
+                           </div>
+                           <button
+                               onClick={handleRefreshEntitlement}
+                               disabled={refreshingEntitlement}
+                               className="px-3 py-2 rounded-lg text-sm font-semibold border border-amber-300 text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+                           >
+                               {refreshingEntitlement ? 'Opdaterer...' : 'Jeg har betalt - opdater status'}
+                           </button>
+                       </div>
+
+                       <div className="mt-4 space-y-2">
+                           <label className="flex items-start gap-2 text-sm text-amber-900">
+                               <input
+                                   type="checkbox"
+                                   checked={acceptedTerms}
+                                   onChange={(e) => setAcceptedTerms(e.target.checked)}
+                               />
+                               <span>
+                                   Jeg accepterer <a href="/handelsbetingelser" target="_blank" rel="noopener noreferrer" className="underline">handelsbetingelserne</a>.
+                               </span>
+                           </label>
+                           <label className="flex items-start gap-2 text-sm text-amber-900">
+                               <input
+                                   type="checkbox"
+                                   checked={acceptedDpa}
+                                   onChange={(e) => setAcceptedDpa(e.target.checked)}
+                               />
+                               <span>
+                                   Jeg accepterer <a href="/databehandleraftale" target="_blank" rel="noopener noreferrer" className="underline">databehandleraftalen (DPA)</a>.
+                               </span>
+                           </label>
+                       </div>
+
+                       {checkoutError && (
+                           <p className="mt-3 text-sm text-red-700">{checkoutError}</p>
+                       )}
+
+                       <button
+                           onClick={handleStartCheckout}
+                           disabled={checkoutLoading || !acceptedTerms || !acceptedDpa}
+                           className="mt-4 px-5 py-2.5 rounded-xl bg-black text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-60"
+                       >
+                           {checkoutLoading ? 'Starter betaling...' : 'Aktiver abonnement'}
+                       </button>
+                   </div>
+               )}
+
                {activeTab === 'overview' && (
                    <>
                        {/* Stats Row */}
@@ -379,10 +493,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = 
                            <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
                                <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
                                    <h3 className="font-bold text-lg text-slate-900">Seneste Kundeemner</h3>
-                                   <button className="text-sm text-blue-600 font-medium hover:text-blue-700 hover:underline">Se alle</button>
+                                   <button
+                                       disabled={isLocked}
+                                       className="text-sm text-blue-600 font-medium hover:text-blue-700 hover:underline disabled:opacity-50 disabled:no-underline"
+                                   >
+                                       Se alle
+                                   </button>
                                </div>
                                <div className="divide-y divide-slate-50">
-                                   {leads.map((lead, i) => (
+                                   {isLocked && (
+                                       <div className="p-6 text-sm text-slate-500">
+                                           Kundeemner vises efter aktivering af abonnement.
+                                       </div>
+                                   )}
+                                   {!isLocked && leads.map((lead, i) => (
                                        <button 
                                             key={i} 
                                             onClick={() => openLead(lead)}
@@ -450,6 +574,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = 
                                         </div>
 
                                         <button
+                                            disabled={isLocked}
                                             className="w-full mt-6 py-3 bg-white/10 hover:bg-white/20 rounded-xl font-medium transition-colors text-sm backdrop-blur-sm border border-white/10 flex items-center justify-center gap-2"
                                             onClick={() => setActiveTab('settings')}
                                         >
@@ -465,7 +590,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = 
                                     </h3>
                                     <div className="p-4 bg-slate-50 rounded-xl text-center">
                                         <p className="text-sm text-slate-500 mb-2">Ingen møder i dag</p>
-                                        <button className="text-xs font-bold text-blue-600 hover:text-blue-700">Synkroniser Kalender</button>
+                                        <button disabled={isLocked} className="text-xs font-bold text-blue-600 hover:text-blue-700 disabled:opacity-50">Synkroniser Kalender</button>
                                     </div>
                                     <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
                                         <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Notifikationer</p>
@@ -492,6 +617,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = 
                                </p>
                            </div>
                        </div>
+                       {isLocked ? (
+                           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                               Kundelisten låses op efter betaling.
+                           </div>
+                       ) : (
                        <div className="overflow-x-auto">
                            <table className="min-w-full text-sm">
                                <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
@@ -525,12 +655,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = 
                                </tbody>
                            </table>
                        </div>
+                       )}
                    </div>
                )}
 
                {activeTab === 'settings' && (
                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                        <div className="lg:col-span-2 space-y-6">
+                           <fieldset disabled={isLocked} className={isLocked ? 'opacity-70' : ''}>
                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
                                <h2 className="text-lg font-bold text-slate-900 mb-1">Virksomhed</h2>
                                <p className="text-sm text-slate-500 mb-6">
@@ -819,6 +951,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = 
                                    Gem indstillinger
                                </button>
                            </div>
+                           </fieldset>
+                           {isLocked && (
+                               <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                                   Indstillinger vises som preview. Aktiver abonnement for at redigere og gemme.
+                               </div>
+                           )}
                        </div>
 
                        <div className="space-y-6">
@@ -889,10 +1027,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout, initialLeadId = 
                        {/* Content */}
                        <div className="p-6 space-y-6">
                            <div className="flex gap-3">
-                               <button className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-800 shadow-lg shadow-slate-200 transition-all active:scale-95">
+                               <button disabled={isLocked} className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-800 shadow-lg shadow-slate-200 transition-all active:scale-95 disabled:opacity-60">
                                    <Phone className="w-4 h-4" /> Ring op
                                </button>
-                               <button className="flex-1 py-3 bg-white border border-slate-200 text-slate-900 rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-95">
+                               <button disabled={isLocked} className="flex-1 py-3 bg-white border border-slate-200 text-slate-900 rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-95 disabled:opacity-60">
                                    <MessageSquare className="w-4 h-4" /> Send SMS
                                </button>
                            </div>

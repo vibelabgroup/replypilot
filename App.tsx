@@ -19,8 +19,13 @@ import { Databehandleraftale } from './components/pages/Databehandleraftale';
 import { AboutUs } from './components/pages/AboutUs';
 import { ContactUs } from './components/pages/ContactUs';
 import { EkstraOmsaetning } from './components/pages/EkstraOmsaetning';
+import { ResetPassword } from './components/pages/ResetPassword';
+import { trackEvent } from './services/telemetry';
+
+type EntitlementStatus = 'unknown' | 'unpaid' | 'paid';
 
 const App: React.FC = () => {
+    const onboardingFirstEnabled = import.meta.env.VITE_FLOW_A_ONBOARDING_FIRST !== 'false';
     const location = useLocation();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isOnboarding, setIsOnboarding] = useState(false);
@@ -28,71 +33,97 @@ const App: React.FC = () => {
     const [showAuth, setShowAuth] = useState(false);
     const [subscriptionChecked, setSubscriptionChecked] = useState(false);
     const [initialLeadId, setInitialLeadId] = useState<number | null>(null);
+    const [entitlementStatus, setEntitlementStatus] = useState<EntitlementStatus>('unknown');
+
+    const refreshEntitlement = async (): Promise<EntitlementStatus> => {
+        const apiBase =
+            import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+        try {
+            const res = await fetch(`${apiBase}/api/subscription-status`, {
+                credentials: 'include',
+            });
+            if (!res.ok) {
+                setEntitlementStatus('unpaid');
+                return 'unpaid';
+            }
+            const data = await res.json();
+            const next: EntitlementStatus = data?.hasActiveSubscription ? 'paid' : 'unpaid';
+            setEntitlementStatus(next);
+            return next;
+        } catch {
+            setEntitlementStatus('unpaid');
+            return 'unpaid';
+        }
+    };
 
     // Fade-in animation observer
     useEffect(() => {
         const run = async () => {
+            const initialParams = new URLSearchParams(window.location.search);
+            const shouldOpenLogin = initialParams.get('login') === '1';
+            if (shouldOpenLogin) {
+                setShowAuth(true);
+                initialParams.delete('login');
+                const nextQuery = initialParams.toString();
+                const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`;
+                window.history.replaceState({}, document.title, nextUrl);
+            }
+
             const leadParam = new URLSearchParams(window.location.search).get('leadId');
             const parsedLead = leadParam ? Number.parseInt(leadParam, 10) : null;
             if (parsedLead && Number.isFinite(parsedLead)) {
                 setInitialLeadId(parsedLead);
             }
 
-            // Restore authenticated dashboard session only for deep links.
-            if (parsedLead && Number.isFinite(parsedLead)) {
-                try {
-                    const apiBase =
-                        import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
-                    const profileRes = await fetch(`${apiBase}/api/auth/me`, {
-                        credentials: 'include',
-                    });
-                    if (profileRes.ok) {
-                        setShowDashboard(true);
-                        setSubscriptionChecked(true);
-                        return;
-                    }
-                } catch {
-                    // Ignore and continue to existing flow.
-                }
-            }
-
             // Detect Stripe checkout success redirect
             const params = new URLSearchParams(window.location.search);
             const isSuccess = params.get('checkout') === 'success';
+            const isCancel = params.get('checkout') === 'cancel';
+            const authRequired = params.get('auth') === 'required';
+
+            const apiBase =
+                import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+            const profileRes = await fetch(`${apiBase}/api/auth/me`, {
+                credentials: 'include',
+            }).catch(() => null);
+            const hasSession = !!profileRes?.ok;
+
+            if (authRequired) {
+                setShowAuth(true);
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
 
             if (isSuccess) {
-                let email: string | null = null;
-                try {
-                    email = window.localStorage.getItem('replypilot_email');
-                } catch {
-                    email = null;
+                trackEvent('checkout_completed_redirect');
+                if (hasSession) {
+                    await refreshEntitlement();
+                    setShowDashboard(true);
+                    setIsOnboarding(false);
+                } else if (!onboardingFirstEnabled) {
+                    setIsOnboarding(true);
+                    window.scrollTo(0, 0);
+                } else {
+                    setShowAuth(true);
                 }
-
-                if (email) {
-                    try {
-                        const apiBase =
-                            import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
-                        const res = await fetch(
-                            `${apiBase}/api/subscription-status?email=${encodeURIComponent(email)}`
-                        );
-                        if (res.ok) {
-                            const data = await res.json();
-                            if (!data.hasActiveSubscription) {
-                                console.warn(
-                                    'Checkout succeeded, but no active subscription found yet for',
-                                    email
-                                );
-                            }
-                        }
-                    } catch (error) {
-                        console.warn('Unable to verify subscription status after checkout', error);
-                    }
-                }
-
-                setIsOnboarding(true);
-                window.scrollTo(0, 0);
                 // Clean up URL so the flag does not persist
                 window.history.replaceState({}, document.title, window.location.pathname);
+            }
+
+            if (isCancel) {
+                if (hasSession) {
+                    await refreshEntitlement();
+                    setShowDashboard(true);
+                }
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+
+            if (!isSuccess && !isCancel && hasSession) {
+                await refreshEntitlement();
+                setShowDashboard(true);
+                // Restore authenticated dashboard session only for deep links.
+                if (parsedLead && Number.isFinite(parsedLead)) {
+                    setShowDashboard(true);
+                }
             }
 
             setSubscriptionChecked(true);
@@ -118,27 +149,64 @@ const App: React.FC = () => {
         setIsModalOpen(true);
     };
 
-    const handlePaymentComplete = () => {
-        // Payment successful, close modal is handled in Modal, now start onboarding
+    const handleSignupComplete = () => {
+        trackEvent('onboarding_started', { source: 'signup_modal' });
         setIsOnboarding(true);
-        // Scroll to top
+        setShowAuth(false);
+        setShowDashboard(false);
+        setIsModalOpen(false);
         window.scrollTo(0, 0);
     };
 
     const handleOnboardingComplete = () => {
+        trackEvent('onboarding_completed');
         setIsOnboarding(false);
         setShowDashboard(true);
+        refreshEntitlement();
         window.scrollTo(0, 0);
+    };
+
+    const handleStartCheckout = async (acceptedTerms: boolean, acceptedDpa: boolean) => {
+        trackEvent('checkout_started', { acceptedTerms, acceptedDpa });
+        const apiBase =
+            import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+        const res = await fetch(`${apiBase}/create-checkout-session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                acceptedTerms,
+                acceptedDpa,
+            }),
+        });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body?.error || 'Kunne ikke starte betaling');
+        }
+        const body = await res.json();
+        if (!body?.url) {
+            throw new Error('Ugyldigt svar fra betalingsserver');
+        }
+        window.location.href = body.url;
     };
 
     const handleLogout = () => {
         setShowDashboard(false);
         setIsOnboarding(false);
+        setEntitlementStatus('unknown');
         window.scrollTo(0, 0);
     };
 
     if (showDashboard) {
-        return <Dashboard onLogout={handleLogout} initialLeadId={initialLeadId} />;
+        return (
+            <Dashboard
+                onLogout={handleLogout}
+                initialLeadId={initialLeadId}
+                hasActiveSubscription={entitlementStatus === 'paid'}
+                onStartCheckout={handleStartCheckout}
+                onRefreshEntitlement={refreshEntitlement}
+            />
+        );
     }
 
     // Prevent flicker during initial subscription check
@@ -157,6 +225,7 @@ const App: React.FC = () => {
                 onAuthenticated={() => {
                     setShowAuth(false);
                     setShowDashboard(true);
+                    refreshEntitlement();
                     window.scrollTo(0, 0);
                 }}
             />
@@ -223,6 +292,10 @@ const App: React.FC = () => {
         );
     }
 
+    if (location.pathname === '/reset-password') {
+        return <ResetPassword />;
+    }
+
     return (
         <>
             <Navbar onOpenModal={handleOpenModal} onLogin={() => setShowAuth(true)} />
@@ -239,7 +312,7 @@ const App: React.FC = () => {
             <Modal 
                 isOpen={isModalOpen} 
                 onClose={() => setIsModalOpen(false)} 
-                onPaymentComplete={handlePaymentComplete}
+                onAuthenticated={handleSignupComplete}
             />
         </>
     );

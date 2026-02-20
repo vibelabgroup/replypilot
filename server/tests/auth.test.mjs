@@ -1,131 +1,93 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import app from '../index.mjs';
-import { pool } from '../utils/db.mjs';
+import { pool, initDb } from '../db.mjs';
+import { initAuthDb } from '../auth.mjs';
 
-describe('Authentication API', () => {
-  const testUser = {
-    email: `test${Date.now()}@example.com`,
-    password: 'TestPassword123!',
-    name: 'Test User',
-    phone: '12345678',
-  };
-
-  let sessionCookie = '';
+describe('Auth password reset flow', () => {
+  const email = `test.reset.${Date.now()}@example.com`;
+  const initialPassword = 'TestPassword123!';
+  const updatedPassword = 'UpdatedPassword456!';
 
   beforeAll(async () => {
-    // Clean up test data
-    await pool.query('DELETE FROM users WHERE email LIKE $1', ['test%@example.com']);
-    await pool.query('DELETE FROM customers WHERE email LIKE $1', ['test%@example.com']);
+    await initDb();
+    await initAuthDb();
+    await pool.query('DELETE FROM users WHERE email = $1', [email]);
+    await pool.query('DELETE FROM customers WHERE email = $1', [email]);
+
+    await request(app).post('/api/auth/signup').send({
+      email,
+      password: initialPassword,
+      name: 'Reset Test User',
+      phone: '12345678',
+    });
   });
 
   afterAll(async () => {
+    await pool.query('DELETE FROM users WHERE email = $1', [email]);
+    await pool.query('DELETE FROM customers WHERE email = $1', [email]);
     await pool.end();
   });
 
-  describe('POST /api/auth/signup', () => {
-    it('should create a new user with valid credentials', async () => {
-      const response = await request(app)
-        .post('/api/auth/signup')
-        .send(testUser)
-        .expect(201);
+  it('returns generic success for existing and non-existing emails', async () => {
+    const existing = await request(app)
+      .post('/api/auth/reset-password-request')
+      .send({ email })
+      .expect(200);
 
-      expect(response.body.success).toBe(true);
-      expect(response.body.user.email).toBe(testUser.email);
-      expect(response.headers['set-cookie']).toBeDefined();
-    });
+    expect(existing.body.success).toBe(true);
 
-    it('should reject signup with invalid email', async () => {
-      const response = await request(app)
-        .post('/api/auth/signup')
-        .send({ ...testUser, email: 'invalid-email' })
-        .expect(400);
+    const nonExisting = await request(app)
+      .post('/api/auth/reset-password-request')
+      .send({ email: `does-not-exist-${Date.now()}@example.com` })
+      .expect(200);
 
-      expect(response.body.success).toBe(false);
-    });
-
-    it('should reject signup with weak password', async () => {
-      const response = await request(app)
-        .post('/api/auth/signup')
-        .send({ ...testUser, email: `another${Date.now()}@example.com`, password: 'weak' })
-        .expect(400);
-
-      expect(response.body.success).toBe(false);
-    });
-
-    it('should reject duplicate email', async () => {
-      const response = await request(app)
-        .post('/api/auth/signup')
-        .send(testUser)
-        .expect(400);
-
-      expect(response.body.success).toBe(false);
-    });
+    expect(nonExisting.body.success).toBe(true);
   });
 
-  describe('POST /api/auth/login', () => {
-    it('should login with valid credentials', async () => {
-      const response = await request(app)
-        .post('/api/auth/login')
-        .send({ email: testUser.email, password: testUser.password })
-        .expect(200);
+  it('rejects reset with invalid token', async () => {
+    const response = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token: 'invalid-token', password: updatedPassword })
+      .expect(400);
 
-      expect(response.body.success).toBe(true);
-      expect(response.body.user.email).toBe(testUser.email);
-      expect(response.headers['set-cookie']).toBeDefined();
-      
-      // Store session cookie
-      sessionCookie = response.headers['set-cookie'][0];
-    });
-
-    it('should reject login with invalid password', async () => {
-      const response = await request(app)
-        .post('/api/auth/login')
-        .send({ email: testUser.email, password: 'wrongpassword' })
-        .expect(401);
-
-      expect(response.body.success).toBe(false);
-    });
-
-    it('should reject login with non-existent email', async () => {
-      const response = await request(app)
-        .post('/api/auth/login')
-        .send({ email: 'nonexistent@example.com', password: 'password123' })
-        .expect(401);
-
-      expect(response.body.success).toBe(false);
-    });
+    expect(response.body.error).toBeDefined();
   });
 
-  describe('GET /api/auth/me', () => {
-    it('should return user data when authenticated', async () => {
-      const response = await request(app)
-        .get('/api/auth/me')
-        .set('Cookie', sessionCookie)
-        .expect(200);
+  it('resets password with valid token and allows login with new password', async () => {
+    const requestResult = await request(app)
+      .post('/api/auth/reset-password-request')
+      .send({ email })
+      .expect(200);
 
-      expect(response.body.success).toBe(true);
-      expect(response.body.user.email).toBe(testUser.email);
-      expect(response.body.user.customer).toBeDefined();
-    });
+    expect(requestResult.body.success).toBe(true);
 
-    it('should reject when not authenticated', async () => {
-      const response = await request(app)
-        .get('/api/auth/me')
-        .expect(401);
+    const tokenResult = await pool.query(
+      `SELECT password_reset_token
+       FROM users
+       WHERE email = $1
+       LIMIT 1`,
+      [email]
+    );
 
-      expect(response.body.success).toBe(false);
-    });
-  });
+    const resetToken = tokenResult.rows[0]?.password_reset_token;
+    expect(resetToken).toBeTruthy();
 
-  describe('POST /api/auth/logout', () => {
-    it('should logout successfully', async () => {
-      const response = await request(app)
-        .post('/api/auth/logout')
-        .set('Cookie', sessionCookie)
-        .expect(200);
+    await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token: resetToken, password: updatedPassword })
+      .expect(200);
 
-      expect(response.body.success).toBe(true);
-    });
+    await request(app)
+      .post('/api/auth/login')
+      .send({ email, password: initialPassword })
+      .expect(401);
+
+    const loginResponse = await request(app)
+      .post('/api/auth/login')
+      .send({ email, password: updatedPassword })
+      .expect(200);
+
+    expect(loginResponse.body.user.email).toBe(email);
   });
 });

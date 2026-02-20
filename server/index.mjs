@@ -11,6 +11,8 @@ import { handleIncomingVoiceDemo } from "./services/twilioService.mjs";
 import { generateDemoLiveResponse, analyzeCompanyProfile } from "./services/aiService.mjs";
 import { getLeads } from "./services/conversationService.mjs";
 import { getNotificationPreferences, updateNotificationPreferences } from "./services/settingsService.mjs";
+import { requestPasswordReset, resetPassword as resetPasswordWithToken } from "./services/authService.mjs";
+import { sendEmail } from "./services/notificationService.mjs";
 import { validate, notificationPreferencesSchema } from "./utils/validators.mjs";
 import {
   initDb,
@@ -73,6 +75,23 @@ app.use(
 
 app.use(cookieParser());
 
+async function sendPasswordResetEmail(email, token) {
+  if (!token) return;
+  const baseUrl = (frontendUrl || "").replace(/\/$/, "");
+  const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+  await sendEmail(
+    email,
+    "Nulstil din kodeord",
+    `
+      <h2>Nulstil kodeord</h2>
+      <p>Vi har modtaget en anmodning om at nulstille din kode.</p>
+      <p><a href="${resetUrl}">Klik her for at vælge et nyt kodeord</a></p>
+      <p>Linket udløber om 1 time.</p>
+      <p>Hvis du ikke har bedt om dette, kan du ignorere denne email.</p>
+    `
+  );
+}
+
 function setSessionCookie(res, token, expiresAt) {
   res.cookie("rp_session", token, {
     httpOnly: true,
@@ -112,6 +131,55 @@ function requireAuth(req, res, next) {
   next();
 }
 
+const entitlementEnforcementEnabled =
+  process.env.ENABLE_ENTITLEMENT_ENFORCEMENT !== "false";
+const onboardingFirstFlowEnabled =
+  process.env.ENABLE_ONBOARDING_FIRST_FLOW !== "false";
+
+async function getCustomerSubscriptionSnapshot(customerId) {
+  const customerResult = await pool.query(
+    `
+      SELECT id, email, name, phone, stripe_customer_id
+      FROM customers
+      WHERE id = $1
+      LIMIT 1;
+    `,
+    [customerId]
+  );
+  const customer = customerResult.rows[0] || null;
+  if (!customer) {
+    return { customer: null, subscription: null };
+  }
+  const subscription = await findActiveSubscriptionByEmail(customer.email);
+  return { customer, subscription };
+}
+
+async function requirePaidSubscription(req, res, next) {
+  if (!entitlementEnforcementEnabled) {
+    return next();
+  }
+  try {
+    if (!req.auth?.customerId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const { subscription } = await getCustomerSubscriptionSnapshot(req.auth.customerId);
+    if (!subscription) {
+      return res.status(402).json({
+        error: "Payment required",
+        code: "PAYMENT_REQUIRED",
+      });
+    }
+    req.entitlement = {
+      hasActiveSubscription: true,
+      subscription,
+    };
+    return next();
+  } catch (err) {
+    logError("Error in requirePaidSubscription middleware", { error: err });
+    return res.status(500).json({ error: "Unable to verify subscription" });
+  }
+}
+
 // Stripe webhook endpoint – use raw body for signature verification
 app.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   const sig = req.headers["stripe-signature"];
@@ -138,13 +206,43 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
         const name = session.metadata?.customer_name;
         const phone = session.metadata?.customer_phone;
         const stripeCustomerId = session.customer;
+        const metadataCustomerId = Number.parseInt(session.metadata?.customer_id, 10);
+        let customer = null;
 
-        const customer = await upsertCustomer({
-          email,
-          name,
-          phone,
-          stripeCustomerId,
-        });
+        if (Number.isFinite(metadataCustomerId)) {
+          const byId = await pool.query(
+            `SELECT * FROM customers WHERE id = $1 LIMIT 1`,
+            [metadataCustomerId]
+          );
+          customer = byId.rows[0] || null;
+          if (customer) {
+            await pool.query(
+              `
+                UPDATE customers
+                SET
+                  stripe_customer_id = COALESCE($1, stripe_customer_id),
+                  name = COALESCE($2, name),
+                  phone = COALESCE($3, phone),
+                  updated_at = NOW()
+                WHERE id = $4
+              `,
+              [stripeCustomerId || null, name || null, phone || null, customer.id]
+            );
+          }
+        }
+
+        if (!customer && email) {
+          customer = await upsertCustomer({
+            email,
+            name,
+            phone,
+            stripeCustomerId,
+          });
+        }
+
+        if (!customer) {
+          throw new Error("Could not resolve customer for checkout.session.completed");
+        }
 
         // Ensure there is a user for this customer/email
         try {
@@ -172,7 +270,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
           await upsertSubscriptionFromStripeObject(customer.id, stripeSub);
         }
 
-        logInfo("Handled checkout.session.completed", { email });
+        logInfo("checkout_completed", { email, customerId: customer.id });
         break;
       }
       case "customer.subscription.created":
@@ -364,6 +462,46 @@ app.post("/api/auth/logout", async (req, res) => {
   res.status(204).end();
 });
 
+app.post("/api/auth/reset-password-request", async (req, res) => {
+  const { email } = req.body || {};
+  if (!email || typeof email !== "string") {
+    return res.status(400).json({ error: "Email is required" });
+  }
+
+  try {
+    const result = await requestPasswordReset(email.trim().toLowerCase());
+    if (result?.token) {
+      await sendPasswordResetEmail(email.trim().toLowerCase(), result.token);
+    }
+    return res.json({
+      success: true,
+      message:
+        "Hvis kontoen findes, har vi sendt et link til nulstilling af kodeord.",
+    });
+  } catch (err) {
+    logError("Reset password request failed", { error: err?.message });
+    return res.status(500).json({ error: "Unable to process reset request" });
+  }
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  const { token, password } = req.body || {};
+  if (!token || !password) {
+    return res.status(400).json({ error: "Token and password are required" });
+  }
+  if (typeof password !== "string" || password.length < 6) {
+    return res.status(400).json({ error: "Password must be at least 6 characters" });
+  }
+
+  try {
+    await resetPasswordWithToken(String(token), String(password));
+    return res.json({ success: true, message: "Password updated successfully" });
+  } catch (err) {
+    const status = err?.statusCode || 400;
+    return res.status(status).json({ error: err?.message || "Unable to reset password" });
+  }
+});
+
 const respondWithProfile = async (req, res) => {
   try {
     const { userId, customerId } = req.auth;
@@ -383,26 +521,13 @@ const respondWithProfile = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const customerResult = await pool.query(
-      `
-        SELECT id, email, name, phone
-        FROM customers
-        WHERE id = $1
-        LIMIT 1;
-      `,
-      [customerId]
-    );
-
-    const customer = customerResult.rows[0] || null;
-
-    const subscription = customer
-      ? await findActiveSubscriptionByEmail(customer.email)
-      : null;
+    const { customer, subscription } = await getCustomerSubscriptionSnapshot(customerId);
 
     res.json({
       user,
       customer,
       subscription,
+      hasActiveSubscription: Boolean(subscription),
     });
   } catch (err) {
     logError("Error in /api/me", { error: err });
@@ -435,7 +560,7 @@ app.get("/api/settings/notifications", requireAuth, async (req, res) => {
   }
 });
 
-app.put("/api/settings/notifications", requireAuth, async (req, res) => {
+app.put("/api/settings/notifications", requireAuth, requirePaidSubscription, async (req, res) => {
   try {
     const { customerId, userId } = req.auth;
     const payload = validate(notificationPreferencesSchema, req.body || {});
@@ -451,7 +576,83 @@ app.put("/api/settings/notifications", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/leads", requireAuth, async (req, res) => {
+app.post("/api/onboarding/draft", requireAuth, async (req, res) => {
+  try {
+    const { customerId, userId } = req.auth;
+    const payload = req.body || {};
+    const companyPayload = payload.company || {};
+    const aiPayload = payload.ai || {};
+    const notifPayload = payload.notifications || {};
+
+    const companyData = {
+      company_name: companyPayload.companyName ?? companyPayload.company_name ?? null,
+      phone_number: companyPayload.phoneNumber ?? companyPayload.phone_number ?? null,
+      website: companyPayload.website ?? null,
+      industry: companyPayload.industry ?? null,
+      address: companyPayload.address ?? null,
+      opening_hours: companyPayload.openingHours ?? companyPayload.opening_hours ?? null,
+      forwarding_number: companyPayload.forwardingNumber ?? companyPayload.forwarding_number ?? null,
+      email_forward: companyPayload.emailForward ?? companyPayload.email_forward ?? null,
+      notes: companyPayload.notes ?? null,
+    };
+
+    const aiData = {
+      agent_name: aiPayload.agentName ?? aiPayload.agent_name ?? null,
+      tone: aiPayload.responseTone ?? aiPayload.tone ?? null,
+      language: aiPayload.language ?? "da",
+      custom_instructions: aiPayload.systemPrompt ?? aiPayload.custom_instructions ?? null,
+      max_message_length: aiPayload.maxTokens ?? aiPayload.max_message_length ?? null,
+      fallback_message: aiPayload.fallbackMessage ?? aiPayload.fallback_message ?? null,
+      primary_provider: aiPayload.primaryProvider ?? aiPayload.primary_provider ?? "gemini",
+      secondary_provider: aiPayload.secondaryProvider ?? aiPayload.secondary_provider ?? null,
+    };
+
+    const [companySettings, aiSettings, notificationSettings] = await Promise.all([
+      upsertCompanySettings(customerId, companyData),
+      upsertAiSettings(customerId, aiData),
+      updateNotificationPreferences(customerId, userId, {
+        emailEnabled: !!notifPayload.emailEnabled,
+        emailNewLead: notifPayload.emailNewLead ?? true,
+        emailNewMessage: notifPayload.emailNewMessage ?? false,
+        emailDailyDigest: notifPayload.emailDailyDigest ?? true,
+        emailWeeklyReport: notifPayload.emailWeeklyReport ?? true,
+        smsEnabled: !!notifPayload.smsEnabled,
+        smsPhone: notifPayload.smsPhone || "",
+        smsNewLead: notifPayload.smsNewLead ?? true,
+        smsNewMessage: notifPayload.smsNewMessage ?? false,
+        notifyLeadManaged: notifPayload.notifyLeadManaged ?? true,
+        notifyLeadConverted: notifPayload.notifyLeadConverted ?? true,
+        notifyAiFailed: notifPayload.notifyAiFailed ?? true,
+        cadenceMode: notifPayload.cadenceMode || "immediate",
+        cadenceIntervalMinutes: notifPayload.cadenceIntervalMinutes ?? null,
+        maxNotificationsPerDay: notifPayload.maxNotificationsPerDay ?? null,
+        quietHoursStart: notifPayload.quietHoursStart ?? null,
+        quietHoursEnd: notifPayload.quietHoursEnd ?? null,
+        timezone: notifPayload.timezone || "Europe/Copenhagen",
+        digestType: notifPayload.digestType || "daily",
+        digestTime: notifPayload.digestTime || "09:00",
+      }),
+    ]);
+
+    logInfo("onboarding_draft_saved", {
+      customerId,
+      hasCompanyName: Boolean(companyData.company_name),
+      hasAssistantName: Boolean(aiData.agent_name),
+    });
+
+    res.json({
+      success: true,
+      company: companySettings,
+      ai: aiSettings,
+      notifications: notificationSettings,
+    });
+  } catch (err) {
+    logError("Error in POST /api/onboarding/draft", { error: err });
+    res.status(500).json({ error: "Unable to save onboarding draft" });
+  }
+});
+
+app.get("/api/leads", requireAuth, requirePaidSubscription, async (req, res) => {
   try {
     const { customerId } = req.auth;
     const limit = Math.max(1, Math.min(Number.parseInt(req.query.limit, 10) || 25, 100));
@@ -466,7 +667,7 @@ app.get("/api/leads", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/leads/:id", requireAuth, async (req, res) => {
+app.get("/api/leads/:id", requireAuth, requirePaidSubscription, async (req, res) => {
   try {
     const { customerId } = req.auth;
     const leadId = Number.parseInt(req.params.id, 10);
@@ -512,7 +713,7 @@ app.get("/api/leads/:id", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/notifications/history", requireAuth, async (req, res) => {
+app.get("/api/notifications/history", requireAuth, requirePaidSubscription, async (req, res) => {
   try {
     const { customerId } = req.auth;
     const limit = Math.max(1, Math.min(Number.parseInt(req.query.limit, 10) || 50, 200));
@@ -536,7 +737,7 @@ app.get("/api/notifications/history", requireAuth, async (req, res) => {
 });
 
 // Phone numbers for tenant (Twilio or Fonecloud pool)
-app.get("/api/phone-numbers", requireAuth, async (req, res) => {
+app.get("/api/phone-numbers", requireAuth, requirePaidSubscription, async (req, res) => {
   try {
     const { customerId } = req.auth;
     const cust = await pool.query(
@@ -568,7 +769,7 @@ app.get("/api/phone-numbers", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/phone-numbers", requireAuth, async (req, res) => {
+app.post("/api/phone-numbers", requireAuth, requirePaidSubscription, async (req, res) => {
   try {
     const { customerId } = req.auth;
     const result = await provisionNumber({ customerId });
@@ -629,7 +830,7 @@ app.post("/api/onboarding/analyze-company", async (req, res) => {
   }
 });
 
-app.put("/api/settings", requireAuth, async (req, res) => {
+app.put("/api/settings", requireAuth, requirePaidSubscription, async (req, res) => {
   try {
     const { customerId } = req.auth;
     const { company = {}, ai = {}, sms = {} } = req.body || {};
@@ -707,7 +908,7 @@ app.put("/api/settings", requireAuth, async (req, res) => {
   }
 });
 
-app.put("/api/settings/company", requireAuth, async (req, res) => {
+app.put("/api/settings/company", requireAuth, requirePaidSubscription, async (req, res) => {
   try {
     const { customerId } = req.auth;
     const payload = req.body || {};
@@ -728,7 +929,7 @@ app.put("/api/settings/company", requireAuth, async (req, res) => {
   }
 });
 
-app.put("/api/settings/ai", requireAuth, async (req, res) => {
+app.put("/api/settings/ai", requireAuth, requirePaidSubscription, async (req, res) => {
   try {
     const { customerId } = req.auth;
     const payload = req.body || {};
@@ -751,18 +952,25 @@ app.put("/api/settings/ai", requireAuth, async (req, res) => {
 });
 
 // JSON body only for normal API routes
-app.post("/create-checkout-session", async (req, res) => {
+app.post("/create-checkout-session", requireAuth, async (req, res) => {
   try {
-    const { name, email, phone, acceptedTerms, acceptedDpa } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ error: "Email is required" });
+    if (!onboardingFirstFlowEnabled) {
+      return res.status(409).json({ error: "Checkout flow currently disabled by feature flag" });
     }
+    const { acceptedTerms, acceptedDpa } = req.body || {};
 
     if (!acceptedTerms || !acceptedDpa) {
       return res.status(400).json({
         error: "Acceptance of terms and data processing agreement (DPA) is required",
       });
+    }
+
+    const { customer, subscription } = await getCustomerSubscriptionSnapshot(req.auth.customerId);
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+    if (subscription) {
+      return res.status(409).json({ error: "Subscription already active" });
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -773,15 +981,22 @@ app.post("/create-checkout-session", async (req, res) => {
           quantity: 1,
         },
       ],
-      customer_email: email,
+      customer_email: customer.email,
       metadata: {
-        customer_name: name || "",
-        customer_phone: phone || "",
+        customer_name: customer.name || "",
+        customer_phone: customer.phone || "",
         accepted_terms: "true",
         accepted_dpa: "true",
+        customer_id: String(customer.id),
+        user_id: String(req.auth.userId),
       },
       success_url: `${frontendUrl}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${frontendUrl}?checkout=cancel`,
+    });
+
+    logInfo("checkout_started", {
+      customerId: customer.id,
+      hasStripeCustomerId: Boolean(customer.stripe_customer_id),
     });
 
     return res.json({ url: session.url });
@@ -796,13 +1011,30 @@ app.post("/create-checkout-session", async (req, res) => {
 
 // Simple subscription status endpoint (soft access control)
 app.get("/api/subscription-status", express.json(), async (req, res) => {
-  const email = req.query.email;
-
-  if (!email || typeof email !== "string") {
-    return res.status(400).json({ error: "Missing email" });
-  }
+  const emailQuery = req.query.email;
 
   try {
+    let email =
+      typeof emailQuery === "string" && emailQuery.trim() ? emailQuery.trim() : null;
+    let customerId = null;
+
+    if (req.auth?.customerId) {
+      customerId = req.auth.customerId;
+      const snapshot = await getCustomerSubscriptionSnapshot(req.auth.customerId);
+      email = snapshot.customer?.email || email;
+      const hasActiveSubscription = Boolean(snapshot.subscription);
+      return res.json({
+        email,
+        customerId,
+        hasActiveSubscription,
+        subscription: snapshot.subscription,
+      });
+    }
+
+    if (!email) {
+      return res.status(400).json({ error: "Missing email" });
+    }
+
     const subscription = await findActiveSubscriptionByEmail(email);
     res.json({
       email,
@@ -856,15 +1088,22 @@ if (fs.existsSync(frontendDist)) {
   });
 }
 
-initDb()
-  .then(() => initAuthDb())
-  .then(() => {
-    app.listen(port, () => {
-      logInfo(`Stripe server running on port ${port}`);
+const isDirectRun =
+  process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+
+if (isDirectRun) {
+  initDb()
+    .then(() => initAuthDb())
+    .then(() => {
+      app.listen(port, () => {
+        logInfo(`Stripe server running on port ${port}`);
+      });
+    })
+    .catch((err) => {
+      logError("Failed to initialize database", { error: err });
+      process.exit(1);
     });
-  })
-  .catch((err) => {
-    logError("Failed to initialize database", { error: err });
-    process.exit(1);
-  });
+}
+
+export default app;
 
