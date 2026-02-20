@@ -5,7 +5,7 @@ export const AboutUs: React.FC = () => {
         <article className="min-h-screen bg-[#FAFAFA] pt-28 pb-20 px-6">
             <div className="max-w-3xl mx-auto text-slate-800">
                 <h1 className="text-3xl md:text-4xl font-bold text-slate-900 tracking-tight mb-4">
-                    About us
+                    Om os
                 </h1>
                 <p className="text-slate-600 leading-relaxed mb-10">
                     Replypilot er bygget til håndværksvirksomheder, der vil undgå tabte opkald og omsætte flere henvendelser til kunder.
@@ -34,8 +34,8 @@ export const AboutUs: React.FC = () => {
                         <h2 className="text-xl font-bold text-slate-900 mb-2">Kontakt teamet</h2>
                         <p className="text-slate-600 leading-relaxed">
                             Har du spørgsmål til produktet eller onboarding, kan du altid skrive til{' '}
-                            <a href="mailto:support@vibelab.cloud" className="text-blue-600 hover:underline">
-                                support@vibelab.cloud
+                            <a href="mailto:hi@replypilot.dk" className="text-blue-600 hover:underline">
+                                hi@replypilot.dk
                             </a>
                             .
                         </p>

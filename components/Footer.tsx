@@ -17,16 +17,16 @@ export const Footer: React.FC = () => {
                             Har du spørgsmål? Skriv til os, så hjælper vi dig hurtigt videre.
                         </p>
                         <a
-                            href="mailto:support@vibelab.cloud"
+                            href="mailto:hi@replypilot.dk"
                             className="inline-flex items-center text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors"
                         >
-                            support@vibelab.cloud
+                            hi@replypilot.dk
                         </a>
                     </div>
 
                     <div className="flex flex-col gap-3 text-sm font-medium text-slate-500">
-                        <Link to="/about-us" className="hover:text-black transition-colors">About us</Link>
-                        <Link to="/contact-us" className="hover:text-black transition-colors">Contact us</Link>
+                        <Link to="/about-us" className="hover:text-black transition-colors">Om os</Link>
+                        <Link to="/contact-us" className="hover:text-black transition-colors">Kontakt</Link>
                         <Link to="/ekstra-omsaetning" className="hover:text-black transition-colors">Ekstra omsætning</Link>
                         <Link to="/privatliv" className="hover:text-black transition-colors">Privatliv</Link>
                         <Link to="/handelsbetingelser" className="hover:text-black transition-colors">Handelsbetingelser</Link>
@@ -35,37 +35,28 @@ export const Footer: React.FC = () => {
                 </div>
 
                 <div className="mt-10 pt-8 border-t border-slate-100 flex flex-col gap-5">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Betaling via Stripe</span>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-medium">
-                                <SiStripe className="w-4 h-4" aria-hidden="true" />
-                            Stripe
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-medium">
-                                <FaCcVisa className="w-4 h-4" aria-hidden="true" />
-                            Visa
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-medium">
-                                <FaCcMastercard className="w-4 h-4" aria-hidden="true" />
-                            Mastercard
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-medium">
-                                <FaCcAmex className="w-4 h-4" aria-hidden="true" />
-                            AmEx
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-medium">
-                                <FaCcApplePay className="w-4 h-4" aria-hidden="true" />
-                            Apple Pay
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-medium">
-                                <SiGooglepay className="w-4 h-4" aria-hidden="true" />
-                            Google Pay
-                            </span>
-                        </div>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700">
+                            <SiStripe className="w-4.5 h-4.5" aria-label="Stripe" />
+                        </span>
+                        <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700">
+                            <FaCcVisa className="w-4.5 h-4.5" aria-label="Visa" />
+                        </span>
+                        <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700">
+                            <FaCcMastercard className="w-4.5 h-4.5" aria-label="Mastercard" />
+                        </span>
+                        <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700">
+                            <FaCcAmex className="w-4.5 h-4.5" aria-label="American Express" />
+                        </span>
+                        <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700">
+                            <FaCcApplePay className="w-4.5 h-4.5" aria-label="Apple Pay" />
+                        </span>
+                        <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700">
+                            <SiGooglepay className="w-4.5 h-4.5" aria-label="Google Pay" />
+                        </span>
                     </div>
 
-                    <p className="text-slate-400 text-sm font-medium">&copy; 2026 Replypilot ApS</p>
+                    <p className="text-slate-400 text-sm font-medium">&copy; 2026 Replypilot</p>
                 </div>
             </div>
         </footer>

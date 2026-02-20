@@ -30,8 +30,8 @@ export const Privatlivspolitik: React.FC = () => {
                             <p className="text-slate-600">VAT: Y3067844A</p>
                             <p className="text-slate-600">
                                 Email:{' '}
-                                <a href="mailto:support@vibelab.cloud" className="text-blue-600 hover:underline">
-                                    support@vibelab.cloud
+                                <a href="mailto:hi@replypilot.dk" className="text-blue-600 hover:underline">
+                                    hi@replypilot.dk
                                 </a>
                             </p>
                         </div>
@@ -132,8 +132,8 @@ export const Privatlivspolitik: React.FC = () => {
                         <h2 className="text-xl font-bold text-slate-900 mb-3">6. Dine Rettigheder</h2>
                         <p className="text-slate-600 leading-relaxed">
                             Du har ret til indsigt i, berigtigelse af eller sletning af dine personoplysninger. Henvendelse herom skal ske til{' '}
-                            <a href="mailto:support@vibelab.cloud" className="text-blue-600 hover:underline">
-                                support@vibelab.cloud
+                            <a href="mailto:hi@replypilot.dk" className="text-blue-600 hover:underline">
+                                hi@replypilot.dk
                             </a>
                             .
                         </p>

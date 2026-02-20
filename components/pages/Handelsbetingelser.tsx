@@ -30,7 +30,7 @@ export const Handelsbetingelser: React.FC = () => {
                             <p className="text-slate-600">VAT-nr.: Y3067844A</p>
                             <p className="text-slate-600">Tlf.: +34 634 00 50 59</p>
                             <p className="text-slate-600">
-                                Email: <a href="mailto:support@vibelab.cloud" className="text-blue-600 hover:underline">support@vibelab.cloud</a>
+                                Email: <a href="mailto:hi@replypilot.dk" className="text-blue-600 hover:underline">hi@replypilot.dk</a>
                             </p>
                             <p className="text-slate-500 text-sm mt-2">(Herefter "Vibe Lab" eller "Selskabet")</p>
                         </div>
@@ -97,7 +97,7 @@ export const Handelsbetingelser: React.FC = () => {
                             Efter udløbet af bindingsperioden på 12 måneder fortsætter abonnementet som et løbende abonnement, der kan opsiges med løbende måned + 1 måneds varsel.
                         </p>
                         <p className="text-slate-600 leading-relaxed">
-                            Opsigelse skal ske skriftligt til <a href="mailto:support@vibelab.cloud" className="text-blue-600 hover:underline">support@vibelab.cloud</a>.
+                            Opsigelse skal ske skriftligt til <a href="mailto:hi@replypilot.dk" className="text-blue-600 hover:underline">hi@replypilot.dk</a>.
                         </p>
                     </div>
 
