@@ -8,7 +8,7 @@ import cookieParser from "cookie-parser";
 import { logInfo, logWarn, logError } from "./logger.mjs";
 import { handleIncomingMessage, provisionNumber } from "./sms/gateway.mjs";
 import { handleIncomingVoiceDemo } from "./services/twilioService.mjs";
-import { generateDemoLiveResponse } from "./services/aiService.mjs";
+import { generateDemoLiveResponse, analyzeCompanyProfile } from "./services/aiService.mjs";
 import {
   initDb,
   pool,
@@ -493,6 +493,22 @@ app.post("/api/demo/ai-response", async (req, res) => {
       response: "Systemfejl: Kunne ikke forbinde til Replypilot serveren. Prøv igen senere.",
       isFallback: true,
     });
+  }
+});
+
+app.post("/api/onboarding/analyze-company", async (req, res) => {
+  try {
+    const companyName = typeof req.body?.companyName === "string" ? req.body.companyName.trim() : "";
+    const website = typeof req.body?.website === "string" ? req.body.website.trim() : "";
+    if (!companyName) {
+      return res.status(400).json({ error: "companyName is required" });
+    }
+
+    const result = await analyzeCompanyProfile(companyName, website);
+    return res.json(result);
+  } catch (err) {
+    logError("Error in POST /api/onboarding/analyze-company", { error: err?.message ?? err });
+    return res.status(500).json({ error: "Unable to analyze company profile" });
   }
 });
 

@@ -446,6 +446,112 @@ export const generateDemoLiveResponse = async (leadMessage, history = []) => {
   }
 };
 
+export const analyzeCompanyProfile = async (companyName, website = '') => {
+  const fallback = {
+    officialName: companyName,
+    cvr: '',
+    foundingYear: '',
+    address: 'Danmark',
+    serviceArea: 'Regionalt',
+    openingHours: 'Man-Fre: 08:00 - 16:00',
+    services: ['Rådgivning', 'Service', 'Renovering'],
+    description:
+      'Vi er en professionel virksomhed der sætter en ære i godt håndværk og god kundeservice.',
+    industry: 'other',
+  };
+
+  try {
+    if (!genAI) {
+      throw new Error('Gemini API key not configured');
+    }
+
+    const systemDefaults = await getSystemDefaultModels();
+    const model = systemDefaults.gemini || 'gemini-2.5-flash';
+    const safeCompany = String(companyName || '').trim();
+    const safeWebsite = String(website || '').trim();
+
+    const prompt = `
+        Perform a strict, deep-dive corporate analysis of "${safeCompany}" (Website: ${safeWebsite}).
+
+        **PHASE 1: HARD FACTS VERIFICATION (REGISTRY DATA)**
+        You MUST use the Google Search tool to find official registry data.
+        Search Queries to execute:
+        1. "${safeCompany} CVR nummer proff.dk"
+        2. "${safeCompany} CVRAPI"
+        3. "site:${safeWebsite} CVR"
+
+        From these results, you MUST extract:
+        - **CVR Number**: The 8-digit Danish business registration number.
+        - **Founding Year**: Look for "Startdato", "Etableringsår", "Stiftet", or "Grundlagt" in the Proff/CVRAPI snippet. This is MANDATORY.
+        - **Address**: The official HQ address.
+
+        **PHASE 2: SERVICE & OPERATIONS DEEP SCAN**
+        Search Queries to execute:
+        1. "site:${safeWebsite} ydelser" OR "site:${safeWebsite} services"
+        2. "site:${safeWebsite} opgaver" OR "site:${safeWebsite} vi tilbyder"
+        3. "${safeCompany} åbningstider"
+
+        From these results, extract:
+        - **Services**: A COMPLETE and EXHAUSTIVE list of specific services. Do not summarize. List every single service mentioned in menus, dropdowns, or lists. Aim for 30+ items if the site is comprehensive.
+        - **Service Area**: Geographical coverage (e.g., "Hele Danmark", "Storkøbenhavn", "Jylland").
+        - **Opening Hours**: e.g., "Man-Fre 07-16".
+
+        **PHASE 3: PROFILE GENERATION**
+        Write a professional, trustworthy "Om Os" text (Danish) for the AI receptionist.
+        - **Founding Year Integration**: You MUST mention the founding year (e.g. "Siden [Year] har vi...").
+        - **Coverage**: Mention the specific area.
+        - **Tone**: Experienced and quality-focused.
+
+        Return valid JSON only.
+        `;
+
+    const response = await genAI.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            officialName: { type: 'string' },
+            cvr: { type: 'string', description: '8 digit number' },
+            foundingYear: { type: 'string', description: 'Year of establishment (e.g. 2015)' },
+            address: { type: 'string' },
+            serviceArea: { type: 'string', description: 'Geographical coverage area' },
+            openingHours: { type: 'string' },
+            services: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'List of specific services offered. Be exhaustive (30+ items if available).',
+            },
+            description: { type: 'string' },
+            industry: { type: 'string' },
+          },
+        },
+      },
+    });
+
+    const rawText =
+      (typeof response?.text === 'string' && response.text) ||
+      (typeof response?.text === 'function' ? response.text() : '') ||
+      (typeof response?.response?.text === 'function' ? response.response.text() : '') ||
+      '{}';
+    const cleanJson = String(rawText).replace(/```json/g, '').replace(/```/g, '').trim() || '{}';
+    const result = JSON.parse(cleanJson);
+
+    if (!result.description || result.description.length < 10) {
+      const yearText = result.foundingYear ? `Siden ${result.foundingYear} har vi` : 'Vi har';
+      result.description = `${yearText} leveret kvalitetsarbejde som ${result.officialName || safeCompany}. Vi dækker ${result.serviceArea || 'hele området'} og sætter en ære i godt håndværk.`;
+    }
+
+    return { ...fallback, ...result };
+  } catch (error) {
+    logError('Company analysis failed', { error: error?.message || error });
+    return fallback;
+  }
+};
+
 // Generate AI response for demo flow using global admin settings
 const generateDemoResponse = async (conversationId, leadMessage) => {
   checkCircuitBreaker();
