@@ -66,7 +66,13 @@ export const PhoneDemo: React.FC = () => {
 
         // Get AI Response
         setIsTyping(true);
-        const aiResponseText = await generateAIResponse(userMsgText);
+        const history = messages
+            .filter((msg) => msg.type === 'user' || msg.type === 'system')
+            .map((msg) => ({
+                role: msg.type === 'user' ? 'user' as const : 'model' as const,
+                text: msg.text
+            }));
+        const aiResponseText = await generateAIResponse(userMsgText, history);
         setIsTyping(false);
 
         // Add AI Message

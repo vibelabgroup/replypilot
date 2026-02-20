@@ -1,44 +1,36 @@
-import { GoogleGenAI, Chat, Type } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
-// Initialize the client with the environment API key (Vite)
-const ai = new GoogleGenAI({
-  apiKey: import.meta.env.VITE_API_KEY,
-});
-
-const SYSTEM_INSTRUCTION = `Du er Replypilot, en AI-receptionist for Tømrer Hansen.
-Din opgave er at håndtere indgående henvendelser via SMS fra kunder, der lige har ringet forgæves.
-
-Retningslinjer:
-1. Vær venlig, imødekommende og professionel.
-2. Svar på dansk i et naturligt SMS-sprog (brug gerne emojies sparsomt).
-3. Dit mål er at afklare hvad kunden har brug for hjælp til (nyt tag, renovering, tilbud osv.).
-4. Forsøg at få kundens navn og adresse hvis de vil have et tilbud.
-5. Hold svarene under 160 tegn når muligt.
-6. Hvis kunden spørger om pris, sig at Mester (Tømrer Hansen) kigger på det og vender tilbage.
-
-Start-scenarie: Du (AI'en) sender den første besked efter et ubesvaret opkald.`;
-
-let chatSession: Chat | null = null;
+const apiBase = import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+const apiKey = import.meta.env.VITE_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
+const demoModel = import.meta.env.VITE_GEMINI_MODEL || "gemini-2.5-flash";
+const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 export const initChatSession = () => {
-  chatSession = ai.chats.create({
-    model: 'gemini-3-flash-preview',
-    config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
-      temperature: 0.7,
-    }
-  });
-  return chatSession;
+  // Session state is handled server-side for demo AI requests.
+  return null;
 };
 
-export const generateAIResponse = async (userMessage: string): Promise<string> => {
-  if (!chatSession) {
-    initChatSession();
-  }
-  
+export const generateAIResponse = async (
+  userMessage: string,
+  history: Array<{ role: "user" | "model"; text: string }> = []
+): Promise<string> => {
   try {
-    const response = await chatSession?.sendMessage({ message: userMessage });
-    return response?.text || "Beklager, jeg fangede ikke det hele. Kan du gentage?";
+    const response = await fetch(`${apiBase}/api/demo/ai-response`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: userMessage,
+        history,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Demo AI API error: ${response.status}`);
+    }
+    const payload = await response.json();
+    return payload?.response || "Beklager, jeg fangede ikke det hele. Kan du gentage?";
   } catch (error) {
     console.error("AI Service Error:", error);
     return "Systemfejl: Kunne ikke forbinde til Replypilot serveren. Prøv igen senere.";
@@ -84,7 +76,7 @@ export const analyzeCompanyInfo = async (companyName: string, website: string) =
         `;
 
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: demoModel,
             contents: prompt,
             config: {
                 tools: [{googleSearch: {}}],

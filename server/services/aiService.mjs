@@ -67,13 +67,30 @@ const toOpenAIMessages = (messages) =>
     content: (m.parts || []).map((p) => p.text).filter(Boolean).join('\n') || '',
   }));
 
+// Load system default AI models (for new clients; used when per-client override is null)
+const getSystemDefaultModels = async () => {
+  const result = await query(
+    `SELECT key, value FROM system_settings WHERE key IN ('default_gemini_model', 'default_groq_model')`,
+    []
+  );
+  const map = {};
+  for (const row of result.rows) {
+    map[row.key] = row.value;
+  }
+  return {
+    gemini: (map.default_gemini_model || '').trim() || 'gemini-2.5-flash',
+    groq: (map.default_groq_model || '').trim() || GROQ_MODEL,
+  };
+};
+
 // Call Groq (OpenAI-compatible API)
-const callGroq = async (messages, aiSettings) => {
+const callGroq = async (messages, aiSettings, modelOverride = null) => {
   if (!GROQ_API_KEY) {
     throw new Error('Groq API key not configured');
   }
+  const model = modelOverride || GROQ_MODEL;
   const body = {
-    model: GROQ_MODEL,
+    model,
     messages: toOpenAIMessages(messages),
     max_tokens: aiSettings.max_tokens || 500,
     temperature: Math.min(1, Math.max(0, Number(aiSettings.temperature) || 0.7)),
@@ -99,12 +116,13 @@ const callGroq = async (messages, aiSettings) => {
 };
 
 // Call Gemini
-const callGemini = async (messages, aiSettings) => {
+const callGemini = async (messages, aiSettings, modelOverride = null) => {
   if (!genAI) {
     throw new Error('Gemini API key not configured');
   }
+  const model = modelOverride || 'gemini-2.5-flash';
   const result = await genAI.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model,
     contents: messages,
     config: {
       temperature: aiSettings.temperature,
@@ -119,17 +137,21 @@ export const generateResponse = async (customerId, conversationId, leadMessage) 
   checkCircuitBreaker();
 
   try {
-    // Get customer AI settings (include provider order)
+    // Get customer AI settings (include provider order and model overrides)
     const aiSettingsResult = await query(
       `SELECT system_prompt, temperature, max_tokens, response_tone, 
               language, greeting_template, closing_template, fallback_message,
-              primary_provider, secondary_provider
+              primary_provider, secondary_provider, gemini_model, groq_model
        FROM ai_settings
        WHERE customer_id = $1`,
       [customerId]
     );
 
     const aiSettings = aiSettingsResult.rows[0] || getDefaultAiSettings();
+    const systemDefaults = await getSystemDefaultModels();
+    const geminiModel = (aiSettings.gemini_model || '').trim() || systemDefaults.gemini;
+    const groqModel = (aiSettings.groq_model || '').trim() || systemDefaults.groq;
+
     const primary = (aiSettings.primary_provider || 'gemini').toLowerCase();
     const secondary = (aiSettings.secondary_provider || '').toLowerCase();
     const providersToTry = [];
@@ -190,9 +212,9 @@ export const generateResponse = async (customerId, conversationId, leadMessage) 
         try {
           logDebug(`Calling ${provider} API`, { customerId, conversationId, attempt });
           if (provider === 'gemini') {
-            response = await callGemini(messages, aiSettings);
+            response = await callGemini(messages, aiSettings, geminiModel);
           } else if (provider === 'groq') {
-            response = await callGroq(messages, aiSettings);
+            response = await callGroq(messages, aiSettings, groqModel);
           } else {
             continue;
           }
@@ -325,24 +347,111 @@ const getDemoAiSettings = async () => {
   };
 };
 
+const normalizeDemoHistory = (history = []) => {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter((m) => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string')
+    .map((m) => ({
+      role: m.role,
+      parts: [{ text: m.text.slice(0, 2000) }],
+    }))
+    .slice(-10);
+};
+
+const generateDemoProviderResponse = async (messages, aiSettings) => {
+  const systemDefaults = await getSystemDefaultModels();
+  const primary = (aiSettings.primary_provider || 'gemini').toLowerCase();
+  const secondary = (aiSettings.secondary_provider || '').toLowerCase();
+  const providersToTry = [];
+
+  if (primary && (primary === 'gemini' ? GEMINI_API_KEY : primary === 'groq' && GROQ_API_KEY)) {
+    providersToTry.push(primary);
+  }
+  if (secondary && secondary !== primary && (secondary === 'gemini' ? GEMINI_API_KEY : secondary === 'groq' && GROQ_API_KEY)) {
+    providersToTry.push(secondary);
+  }
+  if (providersToTry.length === 0) {
+    throw new Error('No AI provider configured for demo');
+  }
+
+  let response;
+  let lastError;
+
+  for (const provider of providersToTry) {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        if (provider === 'gemini') {
+          response = await callGemini(messages, aiSettings, systemDefaults.gemini);
+        } else if (provider === 'groq') {
+          response = await callGroq(messages, aiSettings, systemDefaults.groq);
+        } else {
+          continue;
+        }
+        recordSuccess();
+        break;
+      } catch (error) {
+        lastError = error;
+        logError(`${provider} API call failed (demo/public)`, {
+          attempt,
+          error: error.message,
+        });
+        if (attempt < MAX_RETRIES) {
+          await sleep(RETRY_DELAY_MS * Math.pow(2, attempt - 1));
+        }
+      }
+    }
+    if (response) break;
+  }
+
+  if (!response) {
+    recordFailure();
+    throw lastError || new Error('Failed to generate demo AI response');
+  }
+
+  return response;
+};
+
+export const generateDemoLiveResponse = async (leadMessage, history = []) => {
+  checkCircuitBreaker();
+  try {
+    const aiSettings = await getDemoAiSettings();
+    const systemPrompt = buildSystemPrompt(aiSettings);
+    const messages = [
+      {
+        role: 'system',
+        parts: [{ text: systemPrompt }],
+      },
+      ...normalizeDemoHistory(history),
+      {
+        role: 'user',
+        parts: [{ text: String(leadMessage || '').slice(0, 2000) }],
+      },
+    ];
+
+    const response = await generateDemoProviderResponse(messages, aiSettings);
+    return { success: true, response };
+  } catch (error) {
+    logError('Live demo AI generation failed', {
+      error: error.message,
+    });
+    const fallback =
+      (await getDemoAiSettings()).fallback_message ||
+      'Tak for dit opkald. Vi har desværre tekniske problemer lige nu, men vender tilbage hurtigst muligt.';
+    return {
+      success: false,
+      response: fallback,
+      error: error.message,
+      isFallback: true,
+    };
+  }
+};
+
 // Generate AI response for demo flow using global admin settings
 const generateDemoResponse = async (conversationId, leadMessage) => {
   checkCircuitBreaker();
 
   try {
     const aiSettings = await getDemoAiSettings();
-    const primary = (aiSettings.primary_provider || 'gemini').toLowerCase();
-    const secondary = (aiSettings.secondary_provider || '').toLowerCase();
-    const providersToTry = [];
-    if (primary && (primary === 'gemini' ? GEMINI_API_KEY : primary === 'groq' && GROQ_API_KEY)) {
-      providersToTry.push(primary);
-    }
-    if (secondary && secondary !== primary && (secondary === 'gemini' ? GEMINI_API_KEY : secondary === 'groq' && GROQ_API_KEY)) {
-      providersToTry.push(secondary);
-    }
-    if (providersToTry.length === 0) {
-      throw new Error('No AI provider configured for demo');
-    }
 
     // Get conversation history (last 5 messages)
     const historyResult = await query(
@@ -379,40 +488,8 @@ const generateDemoResponse = async (conversationId, leadMessage) => {
       parts: [{ text: leadMessage }],
     });
 
-    let response;
-    let lastError;
-
-    for (const provider of providersToTry) {
-      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          logDebug(`Calling ${provider} API (demo)`, { conversationId, attempt });
-          if (provider === 'gemini') {
-            response = await callGemini(messages, aiSettings);
-          } else if (provider === 'groq') {
-            response = await callGroq(messages, aiSettings);
-          } else {
-            continue;
-          }
-          recordSuccess();
-          break;
-        } catch (error) {
-          lastError = error;
-          logError(`${provider} API call failed (demo)`, {
-            attempt,
-            error: error.message,
-          });
-          if (attempt < MAX_RETRIES) {
-            await sleep(RETRY_DELAY_MS * Math.pow(2, attempt - 1));
-          }
-        }
-      }
-      if (response) break;
-    }
-
-    if (!response) {
-      recordFailure();
-      throw lastError || new Error('Failed to generate demo AI response');
-    }
+    logDebug('Generating demo AI response', { conversationId });
+    let response = await generateDemoProviderResponse(messages, aiSettings);
 
     if (history.length === 0 && aiSettings.greeting_template) {
       response = `${aiSettings.greeting_template}\n\n${response}`;

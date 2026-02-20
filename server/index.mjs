@@ -8,6 +8,7 @@ import cookieParser from "cookie-parser";
 import { logInfo, logWarn, logError } from "./logger.mjs";
 import { handleIncomingMessage, provisionNumber } from "./sms/gateway.mjs";
 import { handleIncomingVoiceDemo } from "./services/twilioService.mjs";
+import { generateDemoLiveResponse } from "./services/aiService.mjs";
 import {
   initDb,
   pool,
@@ -467,6 +468,31 @@ app.post("/api/phone-numbers", requireAuth, async (req, res) => {
   } catch (err) {
     logError("Error in POST /api/phone-numbers", { error: err });
     res.status(500).json({ error: "Unable to provision phone number" });
+  }
+});
+
+// Public demo AI endpoint used by marketing phone mockup
+app.post("/api/demo/ai-response", async (req, res) => {
+  try {
+    const leadMessage = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+    const history = Array.isArray(req.body?.history) ? req.body.history : [];
+    if (!leadMessage) {
+      return res.status(400).json({ error: "message is required" });
+    }
+
+    const result = await generateDemoLiveResponse(leadMessage, history);
+    return res.json({
+      success: !!result.success,
+      response: result.response,
+      isFallback: !!result.isFallback,
+    });
+  } catch (err) {
+    logError("Error in POST /api/demo/ai-response", { error: err?.message ?? err });
+    return res.status(500).json({
+      success: false,
+      response: "Systemfejl: Kunne ikke forbinde til Replypilot serveren. Prøv igen senere.",
+      isFallback: true,
+    });
   }
 });
 
