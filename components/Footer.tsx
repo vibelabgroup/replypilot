@@ -1,5 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { FaCcAmex, FaCcApplePay, FaCcMastercard, FaCcVisa } from 'react-icons/fa';
+import { SiGooglepay, SiStripe } from 'react-icons/si';
 
 export const Footer: React.FC = () => {
     return (
@@ -33,13 +35,34 @@ export const Footer: React.FC = () => {
                 </div>
 
                 <div className="mt-10 pt-8 border-t border-slate-100 flex flex-col gap-5">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 mr-2">Betaling via Stripe</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">Visa</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">Mastercard</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">American Express</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">Apple Pay</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">Google Pay</span>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Betaling via Stripe</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-medium">
+                                <SiStripe className="w-4 h-4" aria-hidden="true" />
+                            Stripe
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-medium">
+                                <FaCcVisa className="w-4 h-4" aria-hidden="true" />
+                            Visa
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-medium">
+                                <FaCcMastercard className="w-4 h-4" aria-hidden="true" />
+                            Mastercard
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-medium">
+                                <FaCcAmex className="w-4 h-4" aria-hidden="true" />
+                            AmEx
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-medium">
+                                <FaCcApplePay className="w-4 h-4" aria-hidden="true" />
+                            Apple Pay
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-medium">
+                                <SiGooglepay className="w-4 h-4" aria-hidden="true" />
+                            Google Pay
+                            </span>
+                        </div>
                     </div>
 
                     <p className="text-slate-400 text-sm font-medium">&copy; 2026 Replypilot ApS</p>
