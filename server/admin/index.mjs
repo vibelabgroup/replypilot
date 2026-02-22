@@ -796,7 +796,7 @@ app.get(
   requireAdmin,
   asyncHandler(async (_req, res) => {
     const result = await query(
-      `SELECT key, value FROM system_settings WHERE key IN ('default_gemini_model', 'default_groq_model')`,
+      `SELECT key, value FROM system_settings WHERE key IN ('default_gemini_model', 'default_groq_model', 'default_openai_model')`,
       []
     );
     const map = {};
@@ -806,6 +806,7 @@ app.get(
     res.json({
       gemini_model: map.default_gemini_model || 'gemini-2.5-flash',
       groq_model: map.default_groq_model || 'llama-3.1-8b-instant',
+      openai_model: map.default_openai_model || 'gpt-4o-mini',
     });
   })
 );
@@ -814,22 +815,23 @@ app.put(
   '/api/admin/ai-default',
   requireAdmin,
   asyncHandler(async (req, res) => {
-    const { gemini_model, groq_model } = req.body || {};
+    const { gemini_model, groq_model, openai_model } = req.body || {};
     const clampModel = (s) =>
       typeof s === 'string' ? s.trim().slice(0, 120) : null;
     const gemini = clampModel(gemini_model) || 'gemini-2.5-flash';
     const groq = clampModel(groq_model) || 'llama-3.1-8b-instant';
+    const openai = clampModel(openai_model) || 'gpt-4o-mini';
 
     await query(
       `
         INSERT INTO system_settings (key, value)
-        VALUES ('default_gemini_model', $1), ('default_groq_model', $2)
+        VALUES ('default_gemini_model', $1), ('default_groq_model', $2), ('default_openai_model', $3)
         ON CONFLICT (key) DO UPDATE
         SET value = EXCLUDED.value, updated_at = NOW()
       `,
-      [gemini, groq]
+      [gemini, groq, openai]
     );
-    res.json({ gemini_model: gemini, groq_model: groq });
+    res.json({ gemini_model: gemini, groq_model: groq, openai_model: openai });
   })
 );
 
@@ -909,7 +911,7 @@ app.get(
       fallback_message:
         map['demo_ai_fallback_message'] ||
         'Tak for dit opkald. Svar gerne på denne SMS med lidt om hvad du har brug for, så vender vi tilbage hurtigst muligt.',
-      primary_provider: map['demo_ai_primary_provider'] || 'gemini',
+      primary_provider: map['demo_ai_primary_provider'] || 'openai',
       secondary_provider: map['demo_ai_secondary_provider'] || '',
     };
 

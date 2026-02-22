@@ -519,6 +519,15 @@ export async function initDb() {
       ) THEN
         ALTER TABLE ai_settings ADD COLUMN groq_model VARCHAR(120);
       END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'openai_model'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN openai_model VARCHAR(120);
+      END IF;
     END
     $$;
   `);
@@ -689,7 +698,7 @@ export async function upsertAiSettings(customerId, data) {
       data.custom_instructions || null,
       data.max_message_length || null,
       data.fallback_message || null,
-      data.primary_provider || 'gemini',
+      data.primary_provider || 'openai',
       data.secondary_provider || null,
     ]
   );

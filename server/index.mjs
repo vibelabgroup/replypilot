@@ -603,7 +603,7 @@ app.post("/api/onboarding/draft", requireAuth, async (req, res) => {
       custom_instructions: aiPayload.systemPrompt ?? aiPayload.custom_instructions ?? null,
       max_message_length: aiPayload.maxTokens ?? aiPayload.max_message_length ?? null,
       fallback_message: aiPayload.fallbackMessage ?? aiPayload.fallback_message ?? null,
-      primary_provider: aiPayload.primaryProvider ?? aiPayload.primary_provider ?? "gemini",
+      primary_provider: aiPayload.primaryProvider ?? aiPayload.primary_provider ?? "openai",
       secondary_provider: aiPayload.secondaryProvider ?? aiPayload.secondary_provider ?? null,
     };
 
@@ -940,7 +940,7 @@ app.put("/api/settings/ai", requireAuth, requirePaidSubscription, async (req, re
       custom_instructions: payload.systemPrompt ?? payload.custom_instructions ?? null,
       max_message_length: payload.maxTokens ?? payload.max_message_length ?? null,
       fallback_message: payload.fallbackMessage ?? payload.fallback_message ?? null,
-      primary_provider: payload.primaryProvider ?? payload.primary_provider ?? 'gemini',
+      primary_provider: payload.primaryProvider ?? payload.primary_provider ?? 'openai',
       secondary_provider: payload.secondaryProvider ?? payload.secondary_provider ?? null,
     };
     const ai = await upsertAiSettings(customerId, aiData);

@@ -6,10 +6,14 @@ import { emitNotificationEvent } from './notificationService.mjs';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const genAI = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+
+const OPENAI_BASE_URL = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 // Circuit breaker state
 const circuitBreaker = {
@@ -71,7 +75,7 @@ const toOpenAIMessages = (messages) =>
 // Load system default AI models (for new clients; used when per-client override is null)
 const getSystemDefaultModels = async () => {
   const result = await query(
-    `SELECT key, value FROM system_settings WHERE key IN ('default_gemini_model', 'default_groq_model')`,
+    `SELECT key, value FROM system_settings WHERE key IN ('default_gemini_model', 'default_groq_model', 'default_openai_model')`,
     []
   );
   const map = {};
@@ -81,7 +85,40 @@ const getSystemDefaultModels = async () => {
   return {
     gemini: (map.default_gemini_model || '').trim() || 'gemini-2.5-flash',
     groq: (map.default_groq_model || '').trim() || GROQ_MODEL,
+    openai: (map.default_openai_model || '').trim() || OPENAI_MODEL,
   };
+};
+
+// Call OpenAI (chat completions)
+const callOpenAI = async (messages, aiSettings, modelOverride = null) => {
+  if (!OPENAI_API_KEY) {
+    throw new Error('OpenAI API key not configured');
+  }
+  const model = modelOverride || OPENAI_MODEL;
+  const body = {
+    model,
+    messages: toOpenAIMessages(messages),
+    max_tokens: aiSettings.max_tokens || 500,
+    temperature: Math.min(1, Math.max(0, Number(aiSettings.temperature) || 0.7)),
+  };
+  const res = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`OpenAI API error ${res.status}: ${err}`);
+  }
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (text == null) {
+    throw new Error('OpenAI API returned no content');
+  }
+  return String(text).trim();
 };
 
 // Call Groq (OpenAI-compatible API)
@@ -142,7 +179,7 @@ export const generateResponse = async (customerId, conversationId, leadMessage) 
     const aiSettingsResult = await query(
       `SELECT system_prompt, temperature, max_tokens, response_tone, 
               language, greeting_template, closing_template, fallback_message,
-              primary_provider, secondary_provider, gemini_model, groq_model
+              primary_provider, secondary_provider, gemini_model, groq_model, openai_model
        FROM ai_settings
        WHERE customer_id = $1`,
       [customerId]
@@ -152,18 +189,19 @@ export const generateResponse = async (customerId, conversationId, leadMessage) 
     const systemDefaults = await getSystemDefaultModels();
     const geminiModel = (aiSettings.gemini_model || '').trim() || systemDefaults.gemini;
     const groqModel = (aiSettings.groq_model || '').trim() || systemDefaults.groq;
+    const openaiModel = (aiSettings.openai_model || '').trim() || systemDefaults.openai;
 
-    const primary = (aiSettings.primary_provider || 'gemini').toLowerCase();
+    const primary = (aiSettings.primary_provider || 'openai').toLowerCase();
     const secondary = (aiSettings.secondary_provider || '').toLowerCase();
     const providersToTry = [];
-    if (primary && (primary === 'gemini' ? GEMINI_API_KEY : primary === 'groq' && GROQ_API_KEY)) {
+    if (primary && (primary === 'gemini' ? GEMINI_API_KEY : primary === 'groq' ? GROQ_API_KEY : primary === 'openai' && OPENAI_API_KEY)) {
       providersToTry.push(primary);
     }
-    if (secondary && secondary !== primary && (secondary === 'gemini' ? GEMINI_API_KEY : secondary === 'groq' && GROQ_API_KEY)) {
+    if (secondary && secondary !== primary && (secondary === 'gemini' ? GEMINI_API_KEY : secondary === 'groq' ? GROQ_API_KEY : secondary === 'openai' && OPENAI_API_KEY)) {
       providersToTry.push(secondary);
     }
     if (providersToTry.length === 0) {
-      throw new Error('No AI provider configured (set GEMINI_API_KEY and/or GROQ_API_KEY)');
+      throw new Error('No AI provider configured (set OPENAI_API_KEY, GEMINI_API_KEY and/or GROQ_API_KEY)');
     }
 
     // Get conversation history (last 5 messages)
@@ -216,6 +254,8 @@ export const generateResponse = async (customerId, conversationId, leadMessage) 
             response = await callGemini(messages, aiSettings, geminiModel);
           } else if (provider === 'groq') {
             response = await callGroq(messages, aiSettings, groqModel);
+          } else if (provider === 'openai') {
+            response = await callOpenAI(messages, aiSettings, openaiModel);
           } else {
             continue;
           }
@@ -324,7 +364,7 @@ const getDemoAiSettings = async () => {
     );
   }
 
-  const primaryProvider = (map['demo_ai_primary_provider'] || 'gemini').toLowerCase();
+  const primaryProvider = (map['demo_ai_primary_provider'] || 'openai').toLowerCase();
   const secondaryProvider = (map['demo_ai_secondary_provider'] || '').toLowerCase();
 
   return {
@@ -343,8 +383,8 @@ const getDemoAiSettings = async () => {
     fallback_message:
       fallbackMessage ||
       'Tak for dit opkald. Svar gerne på denne SMS med lidt om hvad du har brug for, så vender vi tilbage hurtigst muligt.',
-    primary_provider: primaryProvider === 'groq' ? 'groq' : 'gemini',
-    secondary_provider: secondaryProvider === 'groq' || secondaryProvider === 'gemini' ? secondaryProvider : '',
+    primary_provider: primaryProvider === 'openai' ? 'openai' : primaryProvider === 'groq' ? 'groq' : 'gemini',
+    secondary_provider: secondaryProvider === 'openai' || secondaryProvider === 'groq' || secondaryProvider === 'gemini' ? secondaryProvider : '',
   };
 };
 
@@ -361,14 +401,14 @@ const normalizeDemoHistory = (history = []) => {
 
 const generateDemoProviderResponse = async (messages, aiSettings) => {
   const systemDefaults = await getSystemDefaultModels();
-  const primary = (aiSettings.primary_provider || 'gemini').toLowerCase();
+  const primary = (aiSettings.primary_provider || 'openai').toLowerCase();
   const secondary = (aiSettings.secondary_provider || '').toLowerCase();
   const providersToTry = [];
 
-  if (primary && (primary === 'gemini' ? GEMINI_API_KEY : primary === 'groq' && GROQ_API_KEY)) {
+  if (primary && (primary === 'gemini' ? GEMINI_API_KEY : primary === 'groq' ? GROQ_API_KEY : primary === 'openai' && OPENAI_API_KEY)) {
     providersToTry.push(primary);
   }
-  if (secondary && secondary !== primary && (secondary === 'gemini' ? GEMINI_API_KEY : secondary === 'groq' && GROQ_API_KEY)) {
+  if (secondary && secondary !== primary && (secondary === 'gemini' ? GEMINI_API_KEY : secondary === 'groq' ? GROQ_API_KEY : secondary === 'openai' && OPENAI_API_KEY)) {
     providersToTry.push(secondary);
   }
   if (providersToTry.length === 0) {
@@ -385,6 +425,8 @@ const generateDemoProviderResponse = async (messages, aiSettings) => {
           response = await callGemini(messages, aiSettings, systemDefaults.gemini);
         } else if (provider === 'groq') {
           response = await callGroq(messages, aiSettings, systemDefaults.groq);
+        } else if (provider === 'openai') {
+          response = await callOpenAI(messages, aiSettings, systemDefaults.openai);
         } else {
           continue;
         }
@@ -689,7 +731,7 @@ const getDefaultAiSettings = () => ({
   greeting_template: null,
   closing_template: null,
   fallback_message: null,
-  primary_provider: 'gemini',
+  primary_provider: 'openai',
   secondary_provider: null,
 });
 
