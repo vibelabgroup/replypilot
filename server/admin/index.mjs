@@ -714,7 +714,11 @@ app.get(
       }
     }
 
-    // Gemini / AI health – warm path check (only when no other provider to avoid circuit breaker)
+    // AI providers – report configured/healthy; run one warm path check if any provider is default
+    const openai = {
+      configured: !!process.env.OPENAI_API_KEY,
+      healthy: !!process.env.OPENAI_API_KEY,
+    };
     const gemini = {
       configured: !!process.env.GEMINI_API_KEY,
       healthy: false,
@@ -724,15 +728,20 @@ app.get(
       healthy: !!process.env.GROQ_API_KEY,
     };
 
-    if (gemini.configured) {
+    // Warm path check: ensures default provider (OpenAI when set) can generate a response
+    const hasAnyProvider =
+      process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY;
+    if (hasAnyProvider) {
       try {
         const testCustomerId = -1;
         const testConversationId = -1;
         await generateResponse(testCustomerId, testConversationId, '[HEALTHCHECK] Check-in');
-        gemini.healthy = true;
+        if (gemini.configured) gemini.healthy = true;
       } catch (error) {
-        gemini.healthy = false;
-        gemini.error = error.message;
+        if (gemini.configured) {
+          gemini.healthy = false;
+          gemini.error = error.message;
+        }
       }
     }
 
@@ -742,6 +751,7 @@ app.get(
       redis: redisPing,
       sms: smsProviders,
       stripe: stripeStatus,
+      openai,
       gemini,
       groq,
     });

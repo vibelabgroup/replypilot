@@ -9,6 +9,7 @@ type HealthResponse = {
     fonecloud: { configured: boolean; healthy?: boolean; error?: string };
   };
   stripe: { configured: boolean; healthy: boolean; error?: string };
+  openai?: { configured: boolean; healthy: boolean; error?: string };
   gemini: { configured: boolean; healthy: boolean; error?: string };
   groq?: { configured: boolean; healthy: boolean; error?: string };
 };
@@ -22,11 +23,14 @@ export const SystemStatusPage: React.FC = () => {
   const [defaultError, setDefaultError] = useState<string | null>(null);
   const [defaultGeminiModel, setDefaultGeminiModel] = useState('');
   const [defaultGroqModel, setDefaultGroqModel] = useState('');
+  const [defaultOpenaiModel, setDefaultOpenaiModel] = useState('');
   const [savingAiDefault, setSavingAiDefault] = useState(false);
   const [aiDefaultError, setAiDefaultError] = useState<string | null>(null);
   const [demoAgentName, setDemoAgentName] = useState('');
   const [demoTone, setDemoTone] = useState('professionel');
   const [demoLanguage, setDemoLanguage] = useState<'da' | 'en'>('da');
+  const [demoPrimaryProvider, setDemoPrimaryProvider] = useState<'openai' | 'gemini' | 'groq'>('openai');
+  const [demoSecondaryProvider, setDemoSecondaryProvider] = useState<'openai' | 'gemini' | 'groq' | ''>('');
   const [demoMaxTokens, setDemoMaxTokens] = useState<number | ''>('');
   const [demoInstructions, setDemoInstructions] = useState('');
   const [demoFallback, setDemoFallback] = useState('');
@@ -65,6 +69,7 @@ export const SystemStatusPage: React.FC = () => {
         if (json) {
           setDefaultGeminiModel(json.gemini_model || '');
           setDefaultGroqModel(json.groq_model || '');
+          setDefaultOpenaiModel(json.openai_model || '');
         }
       }
 
@@ -74,6 +79,16 @@ export const SystemStatusPage: React.FC = () => {
           setDemoAgentName(demo.agent_name || '');
           setDemoTone(demo.tone || 'professionel');
           setDemoLanguage(demo.language === 'en' ? 'en' : 'da');
+          setDemoPrimaryProvider(
+            demo.primary_provider === 'openai' || demo.primary_provider === 'groq' || demo.primary_provider === 'gemini'
+              ? demo.primary_provider
+              : 'openai'
+          );
+          setDemoSecondaryProvider(
+            demo.secondary_provider === 'openai' || demo.secondary_provider === 'groq' || demo.secondary_provider === 'gemini'
+              ? demo.secondary_provider
+              : ''
+          );
           setDemoMaxTokens(
             typeof demo.max_tokens === 'number'
               ? demo.max_tokens
@@ -101,6 +116,7 @@ export const SystemStatusPage: React.FC = () => {
         body: JSON.stringify({
           gemini_model: defaultGeminiModel || undefined,
           groq_model: defaultGroqModel || undefined,
+          openai_model: defaultOpenaiModel || undefined,
         }),
       });
       const payload = await res.json().catch(() => ({}));
@@ -109,6 +125,7 @@ export const SystemStatusPage: React.FC = () => {
       }
       if (payload.gemini_model) setDefaultGeminiModel(payload.gemini_model);
       if (payload.groq_model) setDefaultGroqModel(payload.groq_model);
+      if (payload.openai_model) setDefaultOpenaiModel(payload.openai_model);
     } catch (err: any) {
       setAiDefaultError(err?.message || 'Uventet fejl ved gem af standard AI-modeller');
     } finally {
@@ -128,6 +145,8 @@ export const SystemStatusPage: React.FC = () => {
           agent_name: demoAgentName,
           tone: demoTone,
           language: demoLanguage,
+          primary_provider: demoPrimaryProvider,
+          secondary_provider: demoSecondaryProvider || undefined,
           instructions: demoInstructions,
           max_tokens:
             typeof demoMaxTokens === 'number' ? demoMaxTokens : Number(demoMaxTokens || 0),
@@ -247,6 +266,19 @@ export const SystemStatusPage: React.FC = () => {
                   : data.stripe.error || 'Fejl ved Stripe-kald'
               }
             />
+            {data.openai !== undefined && (
+              <StatusCard
+                title="OpenAI"
+                healthy={data.openai.configured && data.openai.healthy}
+                description={
+                  !data.openai.configured
+                    ? 'OPENAI_API_KEY mangler'
+                    : data.openai.healthy
+                    ? 'OpenAI API konfigureret'
+                    : data.openai.error || 'Fejl ved OpenAI API'
+                }
+              />
+            )}
             <StatusCard
               title="Gemini"
               healthy={data.gemini.configured && data.gemini.healthy}
@@ -317,12 +349,22 @@ export const SystemStatusPage: React.FC = () => {
                 </h2>
                 <p className="text-xs text-slate-600">
                   Bruges til alle nye kunder, medmindre der sættes en individuel model på kunden.
-                  Eksempler: gemini-2.5-flash, gemini-2.0-flash, llama-3.1-8b-instant.
+                  Eksempler: gpt-4o-mini, gemini-2.5-flash, llama-3.1-8b-instant.
                 </p>
               </div>
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-0.5">OpenAI-model</label>
+                  <input
+                    type="text"
+                    value={defaultOpenaiModel}
+                    onChange={(e) => setDefaultOpenaiModel(e.target.value)}
+                    placeholder="gpt-4o-mini"
+                    className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                  />
+                </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-0.5">Gemini-model</label>
                   <input
@@ -412,6 +454,41 @@ export const SystemStatusPage: React.FC = () => {
                 >
                   <option value="da">Dansk</option>
                   <option value="en">Engelsk</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Primær AI-udbyder
+                </label>
+                <select
+                  value={demoPrimaryProvider}
+                  onChange={(e) =>
+                    setDemoPrimaryProvider(e.target.value as 'openai' | 'gemini' | 'groq')
+                  }
+                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                >
+                  <option value="openai">OpenAI</option>
+                  <option value="gemini">Gemini</option>
+                  <option value="groq">Groq</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Sekundær AI-udbyder (valgfri)
+                </label>
+                <select
+                  value={demoSecondaryProvider}
+                  onChange={(e) =>
+                    setDemoSecondaryProvider(
+                      e.target.value === '' ? '' : (e.target.value as 'openai' | 'gemini' | 'groq')
+                    )
+                  }
+                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                >
+                  <option value="">Ingen</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="gemini">Gemini</option>
+                  <option value="groq">Groq</option>
                 </select>
               </div>
               <div>
