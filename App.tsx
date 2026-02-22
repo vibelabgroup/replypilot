@@ -19,6 +19,7 @@ import { Databehandleraftale } from './components/pages/Databehandleraftale';
 import { AboutUs } from './components/pages/AboutUs';
 import { ContactUs } from './components/pages/ContactUs';
 import { EkstraOmsaetning } from './components/pages/EkstraOmsaetning';
+import { Tilfredshedsgaranti } from './components/pages/Tilfredshedsgaranti';
 import { ResetPassword } from './components/pages/ResetPassword';
 import { trackEvent } from './services/telemetry';
 
@@ -325,6 +326,16 @@ const App: React.FC = () => {
             <>
                 <Navbar onOpenModal={handleOpenModal} onLogin={() => setShowAuth(true)} />
                 <EkstraOmsaetning />
+                <Footer />
+            </>
+        );
+    }
+
+    if (location.pathname === '/tilfredshedsgaranti') {
+        return (
+            <>
+                <Navbar onOpenModal={handleOpenModal} onLogin={() => setShowAuth(true)} />
+                <Tilfredshedsgaranti />
                 <Footer />
             </>
         );

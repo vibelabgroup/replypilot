@@ -30,6 +30,7 @@ export const Footer: React.FC = () => {
                         <Link to="/ekstra-omsaetning" className="hover:text-black transition-colors">Ekstra omsætning</Link>
                         <Link to="/privatliv" className="hover:text-black transition-colors">Privatliv</Link>
                         <Link to="/handelsbetingelser" className="hover:text-black transition-colors">Handelsbetingelser</Link>
+                        <Link to="/tilfredshedsgaranti" className="hover:text-black transition-colors">14 dages tilfredshedsgaranti</Link>
                         <Link to="/databehandleraftale" className="hover:text-black transition-colors">Databehandleraftale</Link>
                     </div>
                 </div>
