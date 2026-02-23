@@ -290,7 +290,27 @@ If you see a Traefik 404, double-check:
 
 If you see SSL errors, wait a minute and re-check Traefik logs for Let’s Encrypt / ACME messages.
 
-**7. Quick health checks**
+**7. If you get 502 Bad Gateway on https://replypilot.dk**
+
+- **Traefik must reach the api containers.** Ensure the external network exists and api is attached:
+  ```bash
+  docker network create traefik-proxy   # only if it doesn't exist
+  docker compose ps api
+  docker network inspect traefik-proxy  # should list api containers
+  ```
+- **Api must be healthy.** Check logs and health:
+  ```bash
+  docker compose logs api --tail 100
+  docker compose exec api wget -qO- http://127.0.0.1:3000/health || true
+  ```
+  If api exits on start, check required env (e.g. `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `FRONTEND_URL`, `POSTGRES_PASSWORD`) and DB/Redis connectivity.
+- **Redis “Memory overcommit” warning:** To avoid background save failures that can affect stability, on the **host** run:
+  ```bash
+  sudo sysctl vm.overcommit_memory=1
+  ```
+  To make it permanent: add `vm.overcommit_memory = 1` to `/etc/sysctl.conf` and reboot (or run the `sysctl` command after each reboot).
+
+**8. Quick health checks**
 
 ```bash
 docker exec -it replypilot apk add --no-cache curl >/dev/null 2>&1 || true
