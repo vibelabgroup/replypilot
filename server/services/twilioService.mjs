@@ -186,12 +186,18 @@ export const provisionNumber = async (customerId, areaCode = null) => {
 
     const phoneNumber = availableNumbers[0].phoneNumber;
 
-    // Purchase number
+    // Normalize base URL for webhooks (avoid double slashes)
+    const rawBaseUrl = process.env.FRONTEND_URL;
+    const baseUrl = (rawBaseUrl || '').replace(/\/$/, '');
+
+    // Purchase number with both SMS and voice webhooks configured
     const incomingPhoneNumber = await twilioClient.incomingPhoneNumbers.create({
       phoneNumber,
       messagingServiceSid: MESSAGING_SERVICE_SID,
-      smsUrl: `${process.env.FRONTEND_URL}/webhook/twilio`,
+      smsUrl: `${baseUrl}/webhook/twilio`,
       smsMethod: 'POST',
+      voiceUrl: `${baseUrl}/webhook/twilio-voice-demo`,
+      voiceMethod: 'POST',
     });
 
     // Store in database

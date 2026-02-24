@@ -1,0 +1,14 @@
+# Use this when replypilot.dk is served by nginx (or another proxy) on the HOST,
+# not by Traefik in Docker. Copy to docker-compose.override.yml then:
+#   docker compose up -d --force-recreate api
+# Point your proxy at http://127.0.0.1:3000 for replypilot.dk.
+#
+# With this override, only one api replica runs and port 3000 is published
+# so the host proxy can reach it.
+
+services:
+  api:
+    deploy:
+      replicas: 1
+    ports:
+      - "3000:3000"

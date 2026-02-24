@@ -292,12 +292,25 @@ If you see SSL errors, wait a minute and re-check Traefik logs for Let’s Encry
 
 **7. If you get 502 Bad Gateway on https://replypilot.dk**
 
-- **Traefik must reach the api containers.** Ensure the external network exists and api is attached:
-  ```bash
-  docker network create traefik-proxy   # only if it doesn't exist
-  docker compose ps api
-  docker network inspect traefik-proxy  # should list api containers
-  ```
+- **Where does replypilot.dk point?** If DNS points to this server, something on the host (Traefik or nginx) must proxy to the API.
+  - **Using Traefik:** Traefik must be running on this host and connected to the same Docker network as the api containers:
+    ```bash
+    docker network create traefik-proxy   # only if it doesn't exist
+    docker ps | grep -i traefik          # Traefik container must be running (not Exited)
+    docker network inspect traefik-proxy # must list both Traefik and replypilot api containers
+    ```
+    If Traefik has **exited**, start it and set restart policy so it survives reboots:
+    ```bash
+    docker start traefik
+    docker update --restart=unless-stopped traefik
+    ```
+    If Traefik is not running here (e.g. it’s on another machine), either run Traefik on this host and attach it to `traefik-proxy`, or use the “no Traefik” option below.
+  - **Not using Traefik (e.g. nginx on host):** The API is only reachable via the `traefik-proxy` network by default, so nginx cannot reach it. Expose the API on the host and run a single replica:
+    ```bash
+    cp docker-compose.override.example-no-traefik.yml docker-compose.override.yml
+    docker compose up -d --force-recreate api
+    ```
+    Then point nginx (or your proxy) at `http://127.0.0.1:3000` for `replypilot.dk`.
 - **Api must be healthy.** Check logs and health:
   ```bash
   docker compose logs api --tail 100
