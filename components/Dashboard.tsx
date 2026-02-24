@@ -8,6 +8,7 @@ interface DashboardProps {
     hasActiveSubscription: boolean;
     onStartCheckout: (acceptedTerms: boolean, acceptedDpa: boolean) => Promise<void>;
     onRefreshEntitlement: () => Promise<'unknown' | 'unpaid' | 'paid'>;
+    currentUser?: any | null;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -16,6 +17,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     hasActiveSubscription,
     onStartCheckout,
     onRefreshEntitlement,
+    currentUser,
 }) => {
     const [selectedLead, setSelectedLead] = useState<any>(null);
     const [leadTimeline, setLeadTimeline] = useState<any[]>([]);
@@ -429,9 +431,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
                        </div>
                    </div>
 
-                   <button onClick={onLogout} className="text-sm font-medium text-slate-500 hover:text-black flex items-center gap-2 transition-colors">
-                       <LogOut className="w-4 h-4" /> Log ud
-                   </button>
+                   <div className="flex items-center gap-4">
+                       {currentUser && (
+                           <div className="hidden sm:flex items-center gap-2 text-sm text-slate-600">
+                               <User className="w-4 h-4 text-slate-400" />
+                               <span className="font-medium">
+                                   {currentUser?.customer?.name || currentUser?.name || currentUser?.email}
+                               </span>
+                           </div>
+                       )}
+                       <button
+                           onClick={onLogout}
+                           className="text-sm font-medium text-slate-500 hover:text-black flex items-center gap-2 transition-colors"
+                       >
+                           <LogOut className="w-4 h-4" /> Log ud
+                       </button>
+                   </div>
                </div>
            </nav>
 

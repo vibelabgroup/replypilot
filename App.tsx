@@ -37,6 +37,7 @@ const App: React.FC = () => {
     const [initialLeadId, setInitialLeadId] = useState<number | null>(null);
     const [entitlementStatus, setEntitlementStatus] = useState<EntitlementStatus>('unknown');
     const [onboardingInitialStep, setOnboardingInitialStep] = useState(1);
+    const [currentUser, setCurrentUser] = useState<any | null>(null);
 
     const refreshEntitlement = async (): Promise<EntitlementStatus> => {
         const apiBase =
@@ -89,7 +90,14 @@ const App: React.FC = () => {
             const profileRes = await fetch(`${apiBase}/api/auth/me`, {
                 credentials: 'include',
             }).catch(() => null);
-            const hasSession = !!profileRes?.ok;
+            let hasSession = false;
+            if (profileRes?.ok) {
+                hasSession = true;
+                const profileJson = await profileRes.json().catch(() => null);
+                setCurrentUser(profileJson?.user || null);
+            } else {
+                setCurrentUser(null);
+            }
 
             if (authRequired) {
                 setShowAuth(true);
@@ -224,6 +232,7 @@ const App: React.FC = () => {
         setShowDashboard(false);
         setIsOnboarding(false);
         setEntitlementStatus('unknown');
+        setCurrentUser(null);
         window.scrollTo(0, 0);
     };
 
@@ -235,6 +244,7 @@ const App: React.FC = () => {
                 hasActiveSubscription={entitlementStatus === 'paid'}
                 onStartCheckout={handleStartCheckout}
                 onRefreshEntitlement={refreshEntitlement}
+                currentUser={currentUser}
             />
         );
     }
@@ -261,10 +271,21 @@ const App: React.FC = () => {
         return (
             <Auth
                 initialMode="login"
-                onAuthenticated={() => {
+                onAuthenticated={async () => {
                     setShowAuth(false);
                     setShowDashboard(true);
-                    refreshEntitlement();
+                    await refreshEntitlement();
+                    const apiBase =
+                        import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+                    const profileRes = await fetch(`${apiBase}/api/auth/me`, {
+                        credentials: 'include',
+                    }).catch(() => null);
+                    if (profileRes?.ok) {
+                        const profileJson = await profileRes.json().catch(() => null);
+                        setCurrentUser(profileJson?.user || null);
+                    } else {
+                        setCurrentUser(null);
+                    }
                     window.scrollTo(0, 0);
                 }}
             />
