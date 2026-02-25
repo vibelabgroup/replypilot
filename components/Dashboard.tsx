@@ -202,10 +202,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     };
 
     useEffect(() => {
-        if (isLocked) {
-            setLeads([]);
-            return;
-        }
+        // Always load leads so stats/numbers are accurate even when locked.
+        // The UI still blocks drilling into full conversations when isLocked is true.
         loadLeads();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isLocked]);

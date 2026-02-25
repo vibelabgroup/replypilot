@@ -652,7 +652,7 @@ app.post("/api/onboarding/draft", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/leads", requireAuth, requirePaidSubscription, async (req, res) => {
+app.get("/api/leads", requireAuth, async (req, res) => {
   try {
     const { customerId } = req.auth;
     const limit = Math.max(1, Math.min(Number.parseInt(req.query.limit, 10) || 25, 100));
@@ -667,7 +667,7 @@ app.get("/api/leads", requireAuth, requirePaidSubscription, async (req, res) => 
   }
 });
 
-app.get("/api/leads/:id", requireAuth, requirePaidSubscription, async (req, res) => {
+app.get("/api/leads/:id", requireAuth, async (req, res) => {
   try {
     const { customerId } = req.auth;
     const leadId = Number.parseInt(req.params.id, 10);
