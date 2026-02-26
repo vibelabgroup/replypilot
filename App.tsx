@@ -22,6 +22,7 @@ import { EkstraOmsaetning } from './components/pages/EkstraOmsaetning';
 import { Tilfredshedsgaranti } from './components/pages/Tilfredshedsgaranti';
 import { ResetPassword } from './components/pages/ResetPassword';
 import { trackEvent } from './services/telemetry';
+import { StartForBuilders } from './components/pages/StartForBuilders';
 
 type EntitlementStatus = 'unknown' | 'unpaid' | 'paid';
 const ONBOARDING_CHECKOUT_KEY = 'replypilot_onboarding_checkout';
@@ -364,6 +365,21 @@ const App: React.FC = () => {
 
     if (location.pathname === '/reset-password') {
         return <ResetPassword />;
+    }
+
+    if (location.pathname === '/start') {
+        return (
+            <>
+                <Navbar onOpenModal={handleOpenModal} onLogin={() => setShowAuth(true)} />
+                <StartForBuilders onStart={handleOpenModal} />
+                <Footer />
+                <Modal
+                    isOpen={isModalOpen}
+                    onClose={() => setIsModalOpen(false)}
+                    onAuthenticated={handleSignupComplete}
+                />
+            </>
+        );
     }
 
     return (
