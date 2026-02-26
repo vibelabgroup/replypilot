@@ -532,6 +532,157 @@ export async function initDb() {
     $$;
   `);
 
+  // Ensure ai_settings has advanced configuration columns used by AI service.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'system_prompt'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN system_prompt TEXT;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'temperature'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN temperature NUMERIC;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'max_tokens'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN max_tokens INTEGER;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'response_tone'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN response_tone TEXT;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'greeting_template'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN greeting_template TEXT;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'closing_template'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN closing_template TEXT;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'auto_response_enabled'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN auto_response_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'auto_response_delay_seconds'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN auto_response_delay_seconds INTEGER NOT NULL DEFAULT 0;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'debounce_window_seconds'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN debounce_window_seconds INTEGER;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ai_settings'
+          AND column_name = 'min_ai_interval_seconds'
+      ) THEN
+        ALTER TABLE ai_settings ADD COLUMN min_ai_interval_seconds INTEGER;
+      END IF;
+    END
+    $$;
+  `);
+
+  // Ensure conversations have columns for AI scheduling metadata.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'conversations'
+          AND column_name = 'pending_ai_job_id'
+      ) THEN
+        ALTER TABLE conversations ADD COLUMN pending_ai_job_id BIGINT;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'conversations'
+          AND column_name = 'ai_debounce_until'
+      ) THEN
+        ALTER TABLE conversations ADD COLUMN ai_debounce_until TIMESTAMPTZ;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'conversations'
+          AND column_name = 'last_ai_sent_at'
+      ) THEN
+        ALTER TABLE conversations ADD COLUMN last_ai_sent_at TIMESTAMPTZ;
+      END IF;
+    END
+    $$;
+  `);
+
+  // Ensure messages table has a uniqueness constraint for inbound provider SIDs to avoid duplicates.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_index i ON i.indexrelid = c.oid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'i'
+          AND c.relname = 'uniq_messages_inbound_twilio_sid'
+      ) THEN
+        CREATE UNIQUE INDEX uniq_messages_inbound_twilio_sid
+          ON messages(twilio_message_sid)
+          WHERE direction = 'inbound' AND twilio_message_sid IS NOT NULL;
+      END IF;
+    END
+    $$;
+  `);
+
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_customers_sms_provider
       ON customers(sms_provider);

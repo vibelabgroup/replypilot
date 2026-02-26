@@ -1,5 +1,6 @@
 import { enqueueJob } from '../utils/redis.mjs';
 import { logInfo, logError } from '../utils/logger.mjs';
+import { scheduleConversationAIResponse } from '../services/aiScheduler.mjs';
 
 /**
  * Apply normalized inbound SMS message into the domain model:
@@ -106,23 +107,25 @@ export const applyInboundMessage = async (
 
   const { disableAutoResponse = false } = options || {};
 
-  // Queue AI response if auto-response is enabled
+  // Queue / debounce AI response at the conversation level
   const aiSettings = await client.query(
-    `SELECT auto_response_enabled, auto_response_delay_seconds
+    `SELECT auto_response_enabled, auto_response_delay_seconds, debounce_window_seconds
      FROM ai_settings
      WHERE customer_id = $1`,
     [customerId]
   );
 
-  if (!disableAutoResponse && aiSettings.rowCount > 0 && aiSettings.rows[0].auto_response_enabled) {
-    await enqueueJob('ai_queue', {
-      type: 'ai_generate',
-      customerId,
-      conversationId,
-      messageId,
-      leadMessage: body,
-      delayMs: aiSettings.rows[0].auto_response_delay_seconds * 1000,
-    });
+  if (!disableAutoResponse && aiSettings.rowCount > 0) {
+    await scheduleConversationAIResponse(
+      client,
+      {
+        customerId,
+        conversationId,
+        latestMessageId: messageId,
+        latestMessageBody: body,
+      },
+      aiSettings.rows[0]
+    );
   }
 
   // Queue notification

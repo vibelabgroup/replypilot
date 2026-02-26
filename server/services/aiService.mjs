@@ -750,11 +750,126 @@ const getFallbackMessage = async (customerId) => {
 
 // Process AI generation job (for workers)
 export const processAIGenerationJob = async (job) => {
-  const { customerId, conversationId, leadMessage, demo } = job;
+  const {
+    customerId,
+    conversationId,
+    leadMessage,
+    demo,
+    aiJobId,
+    latestInboundMessageId,
+  } = job;
+
+  // For non-demo flows, enforce stale-job and rate-limit checks,
+  // and bundle multiple inbound messages into a single user turn.
+  let effectiveLeadMessage = leadMessage;
+
+  if (!demo && conversationId && customerId) {
+    const now = new Date();
+
+    // Load conversation metadata once.
+    const convResult = await query(
+      `
+        SELECT pending_ai_job_id, last_ai_sent_at
+        FROM conversations
+        WHERE id = $1
+      `,
+      [conversationId]
+    );
+
+    const conv = convResult.rows[0] || null;
+
+    // Skip if this job is no longer the latest scheduled for this conversation.
+    if (aiJobId && conv?.pending_ai_job_id && String(conv.pending_ai_job_id) !== String(aiJobId)) {
+      logDebug('Skipping stale AI job for conversation', {
+        customerId,
+        conversationId,
+        aiJobId,
+        pending_ai_job_id: conv.pending_ai_job_id,
+      });
+      return { success: false, skipped: true, reason: 'stale_ai_job' };
+    }
+
+    // Enforce optional min interval between AI replies.
+    const settingsRes = await query(
+      `
+        SELECT min_ai_interval_seconds
+        FROM ai_settings
+        WHERE customer_id = $1
+      `,
+      [customerId]
+    );
+
+    const minIntervalSeconds =
+      settingsRes.rows[0]?.min_ai_interval_seconds != null
+        ? Number(settingsRes.rows[0].min_ai_interval_seconds)
+        : 0;
+
+    if (minIntervalSeconds > 0 && conv?.last_ai_sent_at) {
+      const lastSent = new Date(conv.last_ai_sent_at);
+      const diffSeconds = (now.getTime() - lastSent.getTime()) / 1000;
+      if (diffSeconds < minIntervalSeconds) {
+        logDebug('Skipping AI job due to min_ai_interval_seconds', {
+          customerId,
+          conversationId,
+          aiJobId,
+          diffSeconds,
+          minIntervalSeconds,
+        });
+        return { success: false, skipped: true, reason: 'min_interval' };
+      }
+    }
+
+    // Build a combined "latest user turn" from inbound messages since last outbound.
+    const lastOutboundRes = await query(
+      `
+        SELECT created_at
+        FROM messages
+        WHERE conversation_id = $1
+          AND direction = 'outbound'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [conversationId]
+    );
+
+    const lastOutboundAt = lastOutboundRes.rows[0]?.created_at || null;
+
+    const historyParams = [conversationId];
+    let historyWhere = 'conversation_id = $1 AND direction = \'inbound\' AND sender = \'lead\'';
+
+    if (lastOutboundAt) {
+      historyParams.push(lastOutboundAt);
+      historyWhere += ' AND created_at > $2';
+    }
+
+    const inboundRes = await query(
+      `
+        SELECT id, content
+        FROM messages
+        WHERE ${historyWhere}
+        ORDER BY created_at ASC
+      `,
+      historyParams
+    );
+
+    if (inboundRes.rowCount > 0) {
+      // If latestInboundMessageId is provided, ignore messages after it (safety in race conditions).
+      const relevantMessages = latestInboundMessageId
+        ? inboundRes.rows.filter((m) => m.id <= latestInboundMessageId)
+        : inboundRes.rows;
+
+      if (relevantMessages.length > 0) {
+        const parts = relevantMessages.map((m) => `- ${m.content}`);
+        effectiveLeadMessage = `Følgende beskeder er netop modtaget fra kunden (i rækkefølge):\n${parts.join(
+          '\n'
+        )}`;
+      }
+    }
+  }
 
   const result = demo
-    ? await generateDemoResponse(conversationId, leadMessage)
-    : await generateResponse(customerId, conversationId, leadMessage);
+    ? await generateDemoResponse(conversationId, effectiveLeadMessage)
+    : await generateResponse(customerId, conversationId, effectiveLeadMessage);
 
   // Even if AI generation failed, we may still have a fallback response.
   if (!result.response) {
@@ -771,14 +886,18 @@ export const processAIGenerationJob = async (job) => {
     [conversationId, result.response]
   );
 
-  // Update AI message count
+  // Update AI message count and last_ai_sent_at, clearing pending_ai_job_id
   await query(
     `
       UPDATE conversations
-      SET ai_response_count = ai_response_count + 1
+      SET
+        ai_response_count = ai_response_count + 1,
+        last_ai_sent_at = NOW(),
+        pending_ai_job_id = NULL
       WHERE id = $1
+        AND (pending_ai_job_id::text IS NULL OR pending_ai_job_id::text = $2)
     `,
-    [conversationId]
+    [conversationId, aiJobId ? String(aiJobId) : null]
   );
 
   // Queue SMS send
