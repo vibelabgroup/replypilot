@@ -664,23 +664,26 @@ export async function initDb() {
   `);
 
   // Ensure messages table has a uniqueness constraint for inbound provider SIDs to avoid duplicates.
+  // First, clean up any existing duplicate inbound Twilio message SIDs.
   await pool.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_class c
-        JOIN pg_index i ON i.indexrelid = c.oid
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE c.relkind = 'i'
-          AND c.relname = 'uniq_messages_inbound_twilio_sid'
-      ) THEN
-        CREATE UNIQUE INDEX uniq_messages_inbound_twilio_sid
-          ON messages(twilio_message_sid)
-          WHERE direction = 'inbound' AND twilio_message_sid IS NOT NULL;
-      END IF;
-    END
-    $$;
+    DELETE FROM messages m
+    USING (
+      SELECT MIN(id) AS keep_id, twilio_message_sid
+      FROM messages
+      WHERE direction = 'inbound' AND twilio_message_sid IS NOT NULL
+      GROUP BY twilio_message_sid
+      HAVING COUNT(*) > 1
+    ) d
+    WHERE m.twilio_message_sid = d.twilio_message_sid
+      AND m.direction = 'inbound'
+      AND m.id <> d.keep_id;
+  `);
+
+  // Then (idempotently) enforce the unique partial index for inbound SIDs.
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_messages_inbound_twilio_sid
+      ON messages(twilio_message_sid)
+      WHERE direction = 'inbound' AND twilio_message_sid IS NOT NULL;
   `);
 
   await pool.query(`
