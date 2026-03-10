@@ -237,9 +237,10 @@ CREATE TABLE IF NOT EXISTS sms_templates (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Ensure active flag exists on older schemas
+-- Ensure template flags/fields exist on older schemas
 ALTER TABLE sms_templates
-    ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS category VARCHAR(50) NOT NULL DEFAULT 'greeting';
 
 CREATE INDEX IF NOT EXISTS idx_sms_templates_customer_id ON sms_templates(customer_id);
 CREATE INDEX IF NOT EXISTS idx_sms_templates_category ON sms_templates(customer_id, category);
