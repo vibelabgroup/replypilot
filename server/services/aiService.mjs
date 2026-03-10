@@ -369,7 +369,7 @@ const getDemoAiSettings = async () => {
     );
   }
 
-  const primaryProvider = (map['demo_ai_primary_provider'] || 'openai').toLowerCase();
+  const primaryProvider = (map['demo_ai_primary_provider'] || 'groq').toLowerCase();
   const secondaryProvider = (map['demo_ai_secondary_provider'] || '').toLowerCase();
 
   return {
@@ -736,7 +736,7 @@ const getDefaultAiSettings = () => ({
   greeting_template: null,
   closing_template: null,
   fallback_message: null,
-  primary_provider: 'openai',
+  primary_provider: 'groq',
   secondary_provider: null,
 });
 

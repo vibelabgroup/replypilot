@@ -1162,7 +1162,7 @@ app.get(
       fallback_message:
         map['demo_ai_fallback_message'] ||
         'Tak for dit opkald. Svar gerne på denne SMS med lidt om hvad du har brug for, så vender vi tilbage hurtigst muligt.',
-      primary_provider: map['demo_ai_primary_provider'] || 'openai',
+      primary_provider: map['demo_ai_primary_provider'] || 'groq',
       secondary_provider: map['demo_ai_secondary_provider'] || '',
     };
 
