@@ -298,28 +298,39 @@ export const handleIncomingVoiceDemo = async (payload) => {
     const customerId = twilioNumber.customer_id;
     const twilioNumberId = twilioNumber.id;
 
-    // Fixed SMS text to send for demo calls (no AI generation)
-    const fixedSmsBody =
-      'Jeg er lige gået ind i et møde, hvornår kan jeg ringe tilbage til dig?';
+    // Synthetic "lead message" that tells the AI this was a missed call
+    // and asks it to send a short, meeting-style follow‑up SMS.
+    const syntheticBody =
+      'En potentiel kunde har lige ringet til virksomheden, men opkaldet kunne ikke besvares. ' +
+      'Du er en AI-receptionist. Svar med en kort, venlig SMS på dansk, hvor du forklarer at opkaldet blev misset ' +
+      'og spørger hvornår vi kan ringe tilbage. Hold dig til 1-2 sætninger.';
 
-    // Reuse inbound SMS pipeline so leads, samtaler og notifikationer håndteres ens,
-    // but disable automatic AI response – we send a fixed SMS instead.
+    // Reuse inbound SMS pipeline so leads, samtaler og notifikationer håndteres ens.
+    // We disable the normal auto-response here and instead enqueue a dedicated demo AI job below.
     const result = await applyInboundMessage(
       client,
       {
         customerId,
         from: From,
         to: To,
-        body: fixedSmsBody,
+        body: syntheticBody,
         providerMessageId: CallSid,
         twilioNumberId,
       },
       { disableAutoResponse: true }
     );
 
-    // Send the fixed SMS directly to the caller
-    await sendSMS(From, fixedSmsBody, To, {
+    // Queue a demo-specific AI job that uses global admin AI configuration.
+    // The demo AI generator will load recent conversation history so repeat calls
+    // get appropriate context in the SMS.
+    await enqueueJob('ai_queue', {
+      type: 'ai_generate_demo',
+      demo: true,
+      customerId,
       conversationId: result.conversationId,
+      leadMessage: syntheticBody,
+      delayMs: 0,
+      scheduledFor: Date.now(),
     });
 
     return result;
