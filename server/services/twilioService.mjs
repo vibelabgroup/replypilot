@@ -298,34 +298,28 @@ export const handleIncomingVoiceDemo = async (payload) => {
     const customerId = twilioNumber.customer_id;
     const twilioNumberId = twilioNumber.id;
 
-    // Synthetic "lead message" that tells the AI to send a fixed SMS text
-    const syntheticBody =
-      'Svar med præcis denne SMS-tekst og intet andet: "Jeg er lige gået ind i et møde, hvornår kan jeg ringe tilbage til dig?"';
+    // Fixed SMS text to send for demo calls (no AI generation)
+    const fixedSmsBody =
+      'Jeg er lige gået ind i et møde, hvornår kan jeg ringe tilbage til dig?';
 
     // Reuse inbound SMS pipeline so leads, samtaler og notifikationer håndteres ens,
-    // men undgå automatisk AI-svar her – vi bruger en særskilt demo-AI.
+    // but disable automatic AI response – we send a fixed SMS instead.
     const result = await applyInboundMessage(
       client,
       {
         customerId,
         from: From,
         to: To,
-        body: syntheticBody,
+        body: fixedSmsBody,
         providerMessageId: CallSid,
         twilioNumberId,
       },
       { disableAutoResponse: true }
     );
 
-    // Queue a demo-specific AI job that uses global admin AI-konfiguration
-    await enqueueJob('ai_queue', {
-      type: 'ai_generate_demo',
-      demo: true,
-      customerId,
+    // Send the fixed SMS directly to the caller
+    await sendSMS(From, fixedSmsBody, To, {
       conversationId: result.conversationId,
-      leadMessage: syntheticBody,
-      delayMs: 0,
-      scheduledFor: Date.now(),
     });
 
     return result;

@@ -95,9 +95,23 @@ export const applyInboundMessage = async (
     leadId = leadResult.rows[0]?.id || null;
   }
 
-  // Store incoming message, tolerating duplicate inbound provider SIDs
+  // Store incoming message, tolerating duplicate inbound provider SIDs without relying on ON CONFLICT
   let messageId;
-  try {
+  if (providerMessageId) {
+    const existing = await client.query(
+      `SELECT id FROM messages
+       WHERE twilio_message_sid = $1
+         AND direction = 'inbound'
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [providerMessageId]
+    );
+    if (existing.rowCount > 0) {
+      messageId = existing.rows[0].id;
+    }
+  }
+
+  if (!messageId) {
     const messageResult = await client.query(
       `INSERT INTO messages (conversation_id, direction, sender, content, twilio_message_sid, channel)
        VALUES ($1, 'inbound', 'lead', $2, $3, $4)
@@ -105,25 +119,6 @@ export const applyInboundMessage = async (
       [conversationId, body, providerMessageId, channel]
     );
     messageId = messageResult.rows[0].id;
-  } catch (err) {
-    // 23505 = unique_violation – fall back to existing message row
-    if (err && err.code === '23505' && providerMessageId) {
-      const existing = await client.query(
-        `SELECT id FROM messages
-         WHERE twilio_message_sid = $1
-           AND direction = 'inbound'
-         ORDER BY created_at ASC
-         LIMIT 1`,
-        [providerMessageId]
-      );
-      if (existing.rowCount > 0) {
-        messageId = existing.rows[0].id;
-      } else {
-        throw err;
-      }
-    } else {
-      throw err;
-    }
   }
 
   // Update conversation
