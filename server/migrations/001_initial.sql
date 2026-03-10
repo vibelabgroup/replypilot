@@ -146,6 +146,13 @@ CREATE TABLE IF NOT EXISTS stripe_events (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Ensure newer columns exist even if an older version of this table
+-- was created previously (e.g. via an earlier init script)
+ALTER TABLE stripe_events
+    ADD COLUMN IF NOT EXISTS processed BOOLEAN DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS processed_at TIMESTAMP WITH TIME ZONE,
+    ADD COLUMN IF NOT EXISTS error_message TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_stripe_events_type ON stripe_events(type);
 CREATE INDEX IF NOT EXISTS idx_stripe_events_processed ON stripe_events(processed);
 
