@@ -290,6 +290,10 @@ CREATE TABLE IF NOT EXISTS conversations (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Ensure conversations.channel exists for message source tracking
+ALTER TABLE conversations
+    ADD COLUMN IF NOT EXISTS channel VARCHAR(20) DEFAULT 'sms';
+
 CREATE INDEX IF NOT EXISTS idx_conversations_customer_id ON conversations(customer_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_lead_phone ON conversations(lead_phone);
 CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(customer_id, status);
@@ -517,7 +521,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     -- Match legacy customers.id type to avoid FK type mismatch
     customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
-    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    -- Match legacy users.id type (integer)
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     action VARCHAR(100) NOT NULL,
     entity_type VARCHAR(50) NOT NULL, -- 'customer', 'user', 'conversation', 'lead', 'settings'
     entity_id UUID,

@@ -351,14 +351,13 @@ app.post(
       // We still return TwiML so caller is not left hanging
     }
 
-    // Always respond with simple TwiML so the call ends cleanly
+    // Always respond with TwiML so the call ends cleanly.
+    // For the demo number we want it to sound like the line is busy
+    // while still triggering the SMS workflow server-side above.
     const twiml =
       '<?xml version="1.0" encoding="UTF-8"?>' +
       "<Response>" +
-      '<Say language="da-DK" voice="alice">' +
-      "Tak for dit opkald. Du modtager straks en SMS fra vores AI-receptionist." +
-      "</Say>" +
-      "<Hangup/>" +
+      '<Reject reason="busy"/>' +
       "</Response>";
 
     res.type("text/xml").send(twiml);
