@@ -298,11 +298,9 @@ export const handleIncomingVoiceDemo = async (payload) => {
     const customerId = twilioNumber.customer_id;
     const twilioNumberId = twilioNumber.id;
 
-    // Synthetic "lead message" that tells the AI this was a missed call
+    // Synthetic "lead message" that tells the AI to send a fixed SMS text
     const syntheticBody =
-      'En potentiel kunde har lige ringet til virksomheden, men opkaldet kunne ikke besvares. ' +
-      'Skriv en venlig SMS på dansk, hvor du præsenterer virksomheden kort, forklarer at opkaldet blev misset, ' +
-      'og beder dem kort skrive hvad de har brug for.';
+      'Svar med præcis denne SMS-tekst og intet andet: "Jeg er lige gået ind i et møde, hvornår kan jeg ringe tilbage til dig?"';
 
     // Reuse inbound SMS pipeline so leads, samtaler og notifikationer håndteres ens,
     // men undgå automatisk AI-svar her – vi bruger en særskilt demo-AI.
