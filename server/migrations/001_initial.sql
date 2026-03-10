@@ -477,7 +477,8 @@ CREATE INDEX IF NOT EXISTS idx_webhook_events_event_id ON webhook_events(provide
 -- Daily Stats (aggregated metrics)
 CREATE TABLE IF NOT EXISTS daily_stats (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    -- Use the same type as existing customers.id (integer in legacy DBs)
+    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     date DATE NOT NULL,
     
     -- Conversation metrics
@@ -514,7 +515,8 @@ CREATE INDEX IF NOT EXISTS idx_daily_stats_date ON daily_stats(date DESC);
 -- Audit Log (for admin/security)
 CREATE TABLE IF NOT EXISTS audit_log (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    -- Match legacy customers.id type to avoid FK type mismatch
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
     user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     action VARCHAR(100) NOT NULL,
     entity_type VARCHAR(50) NOT NULL, -- 'customer', 'user', 'conversation', 'lead', 'settings'
