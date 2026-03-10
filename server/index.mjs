@@ -12,6 +12,7 @@ import { generateDemoLiveResponse, analyzeCompanyProfile } from "./services/aiSe
 import { getLeads } from "./services/conversationService.mjs";
 import { getNotificationPreferences, updateNotificationPreferences } from "./services/settingsService.mjs";
 import { requestPasswordReset, resetPassword as resetPasswordWithToken } from "./services/authService.mjs";
+import { signTenantToken } from "./tenant/auth.mjs";
 import { sendEmail } from "./services/notificationService.mjs";
 import { validate, notificationPreferencesSchema } from "./utils/validators.mjs";
 import {
@@ -401,12 +402,20 @@ app.post("/api/auth/signup", async (req, res) => {
     const session = await createSession(user.id);
     setSessionCookie(res, session.token, session.expiresAt);
 
+    let tenantToken = null;
+    try {
+      tenantToken = await signTenantToken(user.customer_id);
+    } catch (e) {
+      logError("Failed to sign tenant token on signup", { error: e?.message });
+    }
+
     return res.json({
       user: {
         id: user.id,
         email: user.email,
         customerId: user.customer_id,
       },
+      tenantToken,
     });
   } catch (err) {
     logError("Signup error", { error: err });
@@ -440,12 +449,20 @@ app.post("/api/auth/login", async (req, res) => {
     const session = await createSession(user.id);
     setSessionCookie(res, session.token, session.expiresAt);
 
+    let tenantToken = null;
+    try {
+      tenantToken = await signTenantToken(user.customer_id);
+    } catch (e) {
+      logError("Failed to sign tenant token on login", { error: e?.message });
+    }
+
     return res.json({
       user: {
         id: user.id,
         email: user.email,
         customerId: user.customer_id,
       },
+      tenantToken,
     });
   } catch (err) {
     logError("Login error", { error: err });
@@ -1006,6 +1023,111 @@ app.post("/create-checkout-session", requireAuth, async (req, res) => {
       stack: err?.stack,
     });
     return res.status(500).json({ error: "Unable to create checkout session" });
+  }
+});
+
+// Create checkout session and email link instead of redirecting
+app.post("/api/onboarding/send-payment-email", requireAuth, async (req, res) => {
+  try {
+    if (!onboardingFirstFlowEnabled) {
+      return res.status(409).json({ error: "Checkout flow currently disabled by feature flag" });
+    }
+
+    const { acceptedTerms, acceptedDpa } = req.body || {};
+    if (!acceptedTerms || !acceptedDpa) {
+      return res.status(400).json({
+        error: "Acceptance of terms and data processing agreement (DPA) is required",
+      });
+    }
+
+    const { customer, subscription } = await getCustomerSubscriptionSnapshot(
+      req.auth.customerId
+    );
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+    if (subscription) {
+      return res
+        .status(409)
+        .json({ error: "Subscription already active" });
+    }
+    if (!customer.email) {
+      return res.status(400).json({ error: "Customer email is missing" });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      customer_email: customer.email,
+      metadata: {
+        customer_name: customer.name || "",
+        customer_phone: customer.phone || "",
+        accepted_terms: "true",
+        accepted_dpa: "true",
+        customer_id: String(customer.id),
+        user_id: String(req.auth.userId),
+        source: "onboarding_email",
+      },
+      success_url: `${frontendUrl}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${frontendUrl}?checkout=cancel`,
+    });
+
+    if (!session?.url) {
+      logError("Stripe checkout session missing URL for onboarding email", {
+        customerId: customer.id,
+        sessionId: session?.id,
+      });
+      return res.status(500).json({ error: "Unable to create checkout session link" });
+    }
+
+    const safeFrontend = (frontendUrl || "").replace(/\/$/, "");
+    const payUrl = session.url;
+    const subject = "Aktiver dit Replypilot-abonnement";
+    const greetingName = customer.name || customer.email;
+    const html = `
+      <h2>Aktiver dit Replypilot-abonnement</h2>
+      <p>Hej ${greetingName},</p>
+      <p>Klik på knappen herunder for at gennemføre betalingen og aktivere din AI-receptionist.</p>
+      <p style="margin: 24px 0;">
+        <a href="${payUrl}"
+           style="background-color:#111827;color:#ffffff;padding:12px 24px;border-radius:9999px;text-decoration:none;font-weight:600;display:inline-block">
+          Gå til betaling
+        </a>
+      </p>
+      <p>Hvis knappen ikke virker, kan du kopiere dette link og indsætte det i din browser:</p>
+      <p><a href="${payUrl}">${payUrl}</a></p>
+      <p>Efter betalingen bliver du automatisk sendt tilbage til Replypilot på <a href="${safeFrontend}">${safeFrontend}</a>.</p>
+    `;
+
+    const emailResult = await sendEmail(customer.email, subject, html);
+    if (!emailResult?.success) {
+      logError("Failed to send onboarding payment email", {
+        customerId: customer.id,
+        email: customer.email,
+        error: emailResult?.error,
+        code: emailResult?.code,
+      });
+      return res.status(502).json({ error: "Unable to send payment email" });
+    }
+
+    logInfo("onboarding_payment_email_sent", {
+      customerId: customer.id,
+      email: customer.email,
+      sessionId: session.id,
+    });
+
+    return res.json({ success: true });
+  } catch (err) {
+    logError("Error in POST /api/onboarding/send-payment-email", {
+      error: err?.message ?? err,
+      stack: err?.stack,
+    });
+    return res.status(500).json({ error: "Unable to send payment email" });
   }
 });
 

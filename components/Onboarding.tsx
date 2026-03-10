@@ -65,6 +65,9 @@ export const Onboarding: React.FC<OnboardingProps> = ({
     const [acceptedDpa, setAcceptedDpa] = useState(false);
     const [paymentLoading, setPaymentLoading] = useState(false);
     const [paymentError, setPaymentError] = useState<string | null>(null);
+    const [emailSending, setEmailSending] = useState(false);
+    const [emailError, setEmailError] = useState<string | null>(null);
+    const [emailSent, setEmailSent] = useState(false);
 
     useEffect(() => {
         setStep(initialStep);
@@ -326,6 +329,34 @@ export const Onboarding: React.FC<OnboardingProps> = ({
             const message = err instanceof Error ? err.message : 'Kunne ikke starte betaling';
             setPaymentError(message);
             setPaymentLoading(false);
+        }
+    };
+
+    const handleSendPaymentEmail = async () => {
+        setEmailError(null);
+        setEmailSent(false);
+        setEmailSending(true);
+        try {
+            await saveSettings();
+            const res = await fetch(`${API_BASE}/api/onboarding/send-payment-email`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    acceptedTerms,
+                    acceptedDpa,
+                }),
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body?.error || 'Kunne ikke sende betalingsmail');
+            }
+            setEmailSent(true);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Kunne ikke sende betalingsmail';
+            setEmailError(message);
+        } finally {
+            setEmailSending(false);
         }
     };
 
@@ -777,6 +808,16 @@ export const Onboarding: React.FC<OnboardingProps> = ({
                             {paymentError}
                         </div>
                     )}
+                    {emailError && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                            {emailError}
+                        </div>
+                    )}
+                    {emailSent && !emailError && (
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                            Betalingslink er sendt til din email.
+                        </div>
+                    )}
                     <button
                         onClick={handleStartPayment}
                         disabled={paymentLoading || !acceptedTerms || !acceptedDpa}
@@ -784,6 +825,15 @@ export const Onboarding: React.FC<OnboardingProps> = ({
                     >
                         {paymentLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
                         {paymentLoading ? 'Sender til betaling...' : 'Betal og fortsæt'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleSendPaymentEmail}
+                        disabled={emailSending || !acceptedTerms || !acceptedDpa}
+                        className="w-full h-11 border border-slate-300 text-slate-700 font-medium rounded-xl hover:border-slate-400 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                    >
+                        {emailSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                        {emailSending ? 'Sender mail med betalingslink...' : 'Send betalingslink på email'}
                     </button>
                     <button
                         onClick={handleComplete}

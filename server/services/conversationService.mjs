@@ -125,8 +125,8 @@ export const createConversation = async (customerId, data) => {
     }
 
     const conversationResult = await client.query(
-      `INSERT INTO conversations (customer_id, twilio_number_id, fonecloud_number_id, lead_name, lead_phone, lead_email, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'active')
+      `INSERT INTO conversations (customer_id, twilio_number_id, fonecloud_number_id, lead_name, lead_phone, lead_email, lead_source, channel, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'sms', 'sms', 'active')
        RETURNING *`,
       [customerId, twilioNumberId, fonecloudNumberId, leadName, leadPhone, leadEmail]
     );

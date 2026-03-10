@@ -3,6 +3,7 @@ import { query } from '../utils/db.mjs';
 import { logInfo, logError, logDebug } from '../utils/logger.mjs';
 import { enqueueJob } from '../utils/redis.mjs';
 import { emitNotificationEvent } from './notificationService.mjs';
+import { lookupOrderByEmailAndNumber } from './storeIntegrationService.mjs';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -216,8 +217,12 @@ export const generateResponse = async (customerId, conversationId, leadMessage) 
 
     const history = historyResult.rows.reverse();
 
-    // Build system prompt
-    const systemPrompt = buildSystemPrompt(aiSettings);
+    // Build system prompt (extended with optional shop context)
+    const systemPrompt = await buildSystemPromptWithShopContext(
+      aiSettings,
+      customerId,
+      conversationId
+    );
 
     // Build conversation context
     const messages = [
@@ -746,6 +751,75 @@ const getFallbackMessage = async (customerId) => {
     result.rows[0]?.fallback_message ||
     'Tak for din besked. Jeg viderebringer den til virksomheden, og vi vender tilbage hurtigst muligt.'
   );
+};
+
+// Build system prompt with optional shop (Woo/Shopify) context when a
+// conversation is linked to a store and we can identify the customer.
+const buildSystemPromptWithShopContext = async (settings, customerId, conversationId) => {
+  let base = buildSystemPrompt(settings);
+
+  try {
+    const result = await query(
+      `
+        SELECT
+          c.lead_email,
+          c.lead_phone,
+          c.store_connection_id,
+          c.store_customer_external_id
+        FROM conversations c
+        WHERE c.id = $1
+          AND c.customer_id = $2
+        LIMIT 1
+      `,
+      [conversationId, customerId]
+    );
+
+    if (result.rowCount === 0) {
+      return base;
+    }
+
+    const row = result.rows[0];
+    if (!row.store_connection_id) {
+      return base;
+    }
+
+    // Try to load the most relevant recent order for this email/phone
+    const order = await lookupOrderByEmailAndNumber({
+      customerId,
+      email: row.lead_email || null,
+      orderNumber: null,
+    });
+
+    if (!order) {
+      return base;
+    }
+
+    const parts = [];
+    if (order.store_name || order.store_domain) {
+      parts.push(
+        `Kunden er knyttet til webshoppen "${order.store_name || ''}" (${order.store_domain ||
+          ''}).`.trim()
+      );
+    }
+    if (order.external_id || order.status) {
+      parts.push(
+        `Seneste ordre i systemet: #${order.external_id || 'ukendt'} med status "${order.status ||
+          'ukendt'}".`
+      );
+    }
+
+    if (parts.length > 0) {
+      base += `\n\nEkstra kontekst om kundens webshop-ordre:\n${parts.join('\n')}\n\nBrug disse oplysninger til at svare mere præcist på spørgsmål om ordrestatus og køb, men gæt aldrig på data der ikke findes i systemet.`;
+    }
+  } catch (error) {
+    logError('Failed to enrich system prompt with shop context', {
+      customerId,
+      conversationId,
+      error: error?.message,
+    });
+  }
+
+  return base;
 };
 
 // Process AI generation job (for workers)

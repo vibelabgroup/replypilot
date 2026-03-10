@@ -154,6 +154,7 @@ export const handleIncomingSMS = async (payload) => {
       body: Body,
       providerMessageId: MessageSid,
       twilioNumberId,
+      channel: 'sms',
     });
   });
 };

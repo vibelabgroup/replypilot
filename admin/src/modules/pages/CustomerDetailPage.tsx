@@ -64,6 +64,17 @@ type DetailResponse = {
   usage: Usage;
 };
 
+type StoreConnection = {
+  id: string;
+  platform: 'woo' | 'shopify';
+  store_name: string | null;
+  store_domain: string;
+  status: string;
+  last_sync_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export const CustomerDetailPage: React.FC = () => {
   const { id } = useParams();
   const [data, setData] = useState<DetailResponse | null>(null);
@@ -103,6 +114,16 @@ export const CustomerDetailPage: React.FC = () => {
   const [aiSecondaryProvider, setAiSecondaryProvider] = useState<'' | 'gemini' | 'openai' | 'groq'>('');
   const [aiGeminiModel, setAiGeminiModel] = useState('');
   const [aiGroqModel, setAiGroqModel] = useState('');
+  const [storeConnections, setStoreConnections] = useState<StoreConnection[]>([]);
+  const [storesLoading, setStoresLoading] = useState(false);
+  const [storesError, setStoresError] = useState<string | null>(null);
+  const [creatingStore, setCreatingStore] = useState(false);
+  const [newStorePlatform, setNewStorePlatform] = useState<'woo' | 'shopify'>('woo');
+  const [newStoreName, setNewStoreName] = useState('');
+  const [newStoreDomain, setNewStoreDomain] = useState('');
+  const [newStoreCredentials, setNewStoreCredentials] = useState('');
+  const [testingStoreId, setTestingStoreId] = useState<string | null>(null);
+  const [syncingStoreId, setSyncingStoreId] = useState<string | null>(null);
 
   const apiBase =
     import.meta.env.VITE_ADMIN_API_BASE_URL || 'https://admin-api.replypilot.dk';
@@ -144,8 +165,29 @@ export const CustomerDetailPage: React.FC = () => {
     }
   };
 
+  const loadStores = async () => {
+    if (!id) return;
+    setStoresLoading(true);
+    setStoresError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/admin/customers/${id}/store-connections`, {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        throw new Error('Kunne ikke hente butikskoblinger');
+      }
+      const json = await res.json();
+      setStoreConnections(json.data || []);
+    } catch (err: any) {
+      setStoresError(err?.message || 'Uventet fejl');
+    } finally {
+      setStoresLoading(false);
+    }
+  };
+
   useEffect(() => {
     load();
+    loadStores();
   }, [id]);
 
   const loadConversations = async () => {
@@ -691,6 +733,254 @@ export const CustomerDetailPage: React.FC = () => {
             </button>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-xl border bg-white p-4 space-y-3">
+        <h2 className="text-sm font-semibold text-slate-900">Butiksintegrationer</h2>
+        <p className="text-xs text-slate-600">
+          Opret forbindelse til WooCommerce eller Shopify for at lade AI&apos;en bruge produkt- og ordredata.
+        </p>
+
+        <div className="grid gap-2 md:grid-cols-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">
+              Platform
+            </label>
+            <select
+              value={newStorePlatform}
+              onChange={(e) =>
+                setNewStorePlatform(e.target.value === 'shopify' ? 'shopify' : 'woo')
+              }
+              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+            >
+              <option value="woo">WooCommerce</option>
+              <option value="shopify">Shopify</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">
+              Navn (valgfri)
+            </label>
+            <input
+              type="text"
+              value={newStoreName}
+              onChange={(e) => setNewStoreName(e.target.value)}
+              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+              placeholder="Fx webshop-navn"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">
+              Domæne / base-URL
+            </label>
+            <input
+              type="text"
+              value={newStoreDomain}
+              onChange={(e) => setNewStoreDomain(e.target.value)}
+              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+              placeholder={
+                newStorePlatform === 'woo'
+                  ? 'https://example.com/wp-json/wc/v3'
+                  : 'shop-name.myshopify.com'
+              }
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">
+              Credentials (JSON)
+            </label>
+            <input
+              type="text"
+              value={newStoreCredentials}
+              onChange={(e) => setNewStoreCredentials(e.target.value)}
+              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+              placeholder={
+                newStorePlatform === 'woo'
+                  ? '{"apiKey":"ck_...","apiSecret":"cs_..."}'
+                  : '{"accessToken":"shpat_..."}'
+              }
+            />
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={async () => {
+              if (!id) return;
+              setCreatingStore(true);
+              setStoresError(null);
+              try {
+                let creds: any = {};
+                if (newStoreCredentials.trim()) {
+                  try {
+                    creds = JSON.parse(newStoreCredentials);
+                  } catch {
+                    throw new Error('Credentials skal være gyldig JSON');
+                  }
+                }
+                if (newStorePlatform === 'woo') {
+                  creds = {
+                    restUrl: newStoreDomain || creds.restUrl,
+                    apiKey: creds.apiKey,
+                    apiSecret: creds.apiSecret,
+                  };
+                } else {
+                  creds = {
+                    shopDomain: newStoreDomain || creds.shopDomain,
+                    accessToken: creds.accessToken,
+                    apiVersion: creds.apiVersion,
+                  };
+                }
+                const res = await fetch(
+                  `${apiBase}/api/admin/customers/${id}/store-connections`,
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                      platform: newStorePlatform,
+                      store_name: newStoreName || null,
+                      store_domain: newStoreDomain,
+                      credentials: creds,
+                    }),
+                  }
+                );
+                const payload = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                  throw new Error(
+                    payload?.error || 'Kunne ikke oprette butikskobling'
+                  );
+                }
+                setNewStoreName('');
+                setNewStoreDomain('');
+                setNewStoreCredentials('');
+                await loadStores();
+              } catch (err: any) {
+                setStoresError(err?.message || 'Uventet fejl');
+              } finally {
+                setCreatingStore(false);
+              }
+            }}
+            disabled={creatingStore || !newStoreDomain}
+            className="inline-flex items-center rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+          >
+            {creatingStore ? 'Opretter…' : 'Opret butikskobling'}
+          </button>
+        </div>
+
+        {storesLoading && (
+          <p className="text-xs text-slate-500">Indlæser butikskoblinger…</p>
+        )}
+        {storesError && (
+          <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-md px-2 py-1.5">
+            {storesError}
+          </p>
+        )}
+        {!storesLoading && storeConnections.length > 0 && (
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Platform</th>
+                  <th className="px-3 py-2">Butik</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Sidste sync</th>
+                  <th className="px-3 py-2 text-right">Handling</th>
+                </tr>
+              </thead>
+              <tbody>
+                {storeConnections.map((sc) => (
+                  <tr
+                    key={sc.id}
+                    className="border-t border-slate-100 bg-white hover:bg-slate-50/80"
+                  >
+                    <td className="px-3 py-2 text-xs font-mono text-slate-700">
+                      {sc.platform}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-800">
+                      <div className="font-medium">
+                        {sc.store_name || sc.store_domain}
+                      </div>
+                      {sc.store_name && (
+                        <div className="text-[11px] text-slate-500">
+                          {sc.store_domain}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      <span className="inline-flex items-center rounded-full border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                        {sc.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-500">
+                      {sc.last_sync_at
+                        ? new Date(sc.last_sync_at).toLocaleString('da-DK')
+                        : 'Aldrig'}
+                    </td>
+                    <td className="px-3 py-2 text-right space-x-1">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setTestingStoreId(sc.id);
+                          try {
+                            const res = await fetch(
+                              `${apiBase}/api/admin/store-connections/${sc.id}/test`,
+                              { method: 'POST', credentials: 'include' }
+                            );
+                            const payload = await res.json().catch(() => ({}));
+                            if (!res.ok || payload.success === false) {
+                              throw new Error(
+                                payload?.error ||
+                                  'Test mislykkedes – se logs for detaljer'
+                              );
+                            }
+                            setMessage('Butikstilkobling testet OK');
+                          } catch (err: any) {
+                            setError(err?.message || 'Uventet fejl ved test');
+                          } finally {
+                            setTestingStoreId(null);
+                          }
+                        }}
+                        disabled={testingStoreId === sc.id}
+                        className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        {testingStoreId === sc.id ? 'Tester…' : 'Test'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setSyncingStoreId(sc.id);
+                          try {
+                            const res = await fetch(
+                              `${apiBase}/api/admin/store-connections/${sc.id}/trigger-sync`,
+                              { method: 'POST', credentials: 'include' }
+                            );
+                            const payload = await res.json().catch(() => ({}));
+                            if (!res.ok || payload.success === false) {
+                              throw new Error(
+                                payload?.error ||
+                                  'Kunne ikke køe sync – se logs for detaljer'
+                              );
+                            }
+                            setMessage('Sync job køet');
+                          } catch (err: any) {
+                            setError(err?.message || 'Uventet fejl ved sync');
+                          } finally {
+                            setSyncingStoreId(null);
+                          }
+                        }}
+                        disabled={syncingStoreId === sc.id}
+                        className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        {syncingStoreId === sc.id ? 'Synker…' : 'Sync nu'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border bg-white p-4 space-y-2">

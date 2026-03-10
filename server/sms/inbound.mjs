@@ -26,7 +26,16 @@ import { scheduleConversationAIResponse } from '../services/aiScheduler.mjs';
  */
 export const applyInboundMessage = async (
   client,
-  { customerId, from, to, body, providerMessageId, twilioNumberId = null, fonecloudNumberId = null },
+  {
+    customerId,
+    from,
+    to,
+    body,
+    providerMessageId,
+    twilioNumberId = null,
+    fonecloudNumberId = null,
+    channel = 'sms',
+  },
   options = {}
 ) => {
   logInfo('Applying inbound SMS message', {
@@ -51,10 +60,10 @@ export const applyInboundMessage = async (
   if (conversationResult.rowCount === 0) {
     // Create new conversation
     const newConversation = await client.query(
-      `INSERT INTO conversations (customer_id, twilio_number_id, fonecloud_number_id, lead_phone, lead_source)
-       VALUES ($1, $2, $3, $4, 'sms')
+      `INSERT INTO conversations (customer_id, twilio_number_id, fonecloud_number_id, lead_phone, lead_source, channel)
+       VALUES ($1, $2, $3, $4, 'sms', $5)
        RETURNING id`,
-      [customerId, twilioNumberId, fonecloudNumberId, from]
+      [customerId, twilioNumberId, fonecloudNumberId, from, channel]
     );
     conversationId = newConversation.rows[0].id;
 
@@ -88,10 +97,10 @@ export const applyInboundMessage = async (
 
   // Store incoming message
   const messageResult = await client.query(
-    `INSERT INTO messages (conversation_id, direction, sender, content, twilio_message_sid)
-     VALUES ($1, 'inbound', 'lead', $2, $3)
+    `INSERT INTO messages (conversation_id, direction, sender, content, twilio_message_sid, channel)
+     VALUES ($1, 'inbound', 'lead', $2, $3, $4)
      RETURNING id`,
-    [conversationId, body, providerMessageId]
+    [conversationId, body, providerMessageId, channel]
   );
   const messageId = messageResult.rows[0].id;
 

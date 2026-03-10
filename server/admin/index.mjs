@@ -862,6 +862,150 @@ app.get(
   })
 );
 
+// Store connections (WooCommerce / Shopify) CRUD for a customer
+app.get(
+  '/api/admin/customers/:id/store-connections',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await query(
+      `
+        SELECT
+          sc.id,
+          sc.platform,
+          sc.store_name,
+          sc.store_domain,
+          sc.status,
+          sc.last_sync_at,
+          sc.created_at,
+          sc.updated_at
+        FROM store_connections sc
+        WHERE sc.customer_id = $1
+        ORDER BY sc.created_at DESC
+      `,
+      [id]
+    );
+
+    res.json({ data: result.rows });
+  })
+);
+
+app.post(
+  '/api/admin/customers/:id/store-connections',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { platform, store_name, store_domain, credentials } = req.body || {};
+
+    if (!platform || !['woo', 'shopify'].includes(platform)) {
+      return res
+        .status(400)
+        .json({ error: "platform must be 'woo' or 'shopify'" });
+    }
+
+    if (!store_domain || typeof store_domain !== 'string') {
+      return res.status(400).json({ error: 'store_domain is required' });
+    }
+
+    const safeCredentials =
+      credentials && typeof credentials === 'object' ? credentials : {};
+
+    const result = await query(
+      `
+        INSERT INTO store_connections (
+          customer_id,
+          platform,
+          store_name,
+          store_domain,
+          credentials,
+          status
+        )
+        VALUES ($1, $2, $3, $4, $5, 'active')
+        RETURNING *
+      `,
+      [id, platform, store_name || null, store_domain.trim(), safeCredentials]
+    );
+
+    res.status(201).json(result.rows[0]);
+  })
+);
+
+app.put(
+  '/api/admin/store-connections/:connectionId',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { connectionId } = req.params;
+    const { store_name, store_domain, status, credentials } = req.body || {};
+
+    const fields = [];
+    const params = [];
+    let idx = 1;
+
+    if (store_name !== undefined) {
+      fields.push(`store_name = $${idx++}`);
+      params.push(store_name || null);
+    }
+    if (store_domain !== undefined) {
+      fields.push(`store_domain = $${idx++}`);
+      params.push(store_domain || null);
+    }
+    if (status !== undefined) {
+      fields.push(`status = $${idx++}`);
+      params.push(status || 'active');
+    }
+    if (credentials !== undefined) {
+      fields.push(`credentials = $${idx++}`);
+      params.push(
+        credentials && typeof credentials === 'object' ? credentials : {}
+      );
+    }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    params.push(connectionId);
+
+    const result = await query(
+      `
+        UPDATE store_connections
+        SET ${fields.join(', ')}, updated_at = NOW()
+        WHERE id = $${idx}
+        RETURNING *
+      `,
+      params
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Store connection not found' });
+    }
+
+    res.json(result.rows[0]);
+  })
+);
+
+app.delete(
+  '/api/admin/store-connections/:connectionId',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { connectionId } = req.params;
+    const result = await query(
+      `
+        DELETE FROM store_connections
+        WHERE id = $1
+        RETURNING id
+      `,
+      [connectionId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Store connection not found' });
+    }
+
+    res.status(204).end();
+  })
+);
+
 app.put(
   '/api/admin/dashboard-metrics',
   requireAdmin,
@@ -894,6 +1038,103 @@ app.put(
     res.json({
       minutes_saved_per_message: minutesSavedPerMessage,
     });
+  })
+);
+
+// Test a single store connection (basic health check)
+app.post(
+  '/api/admin/store-connections/:connectionId/test',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { connectionId } = req.params;
+
+    const result = await query(
+      `
+        SELECT *
+        FROM store_connections
+        WHERE id = $1
+        LIMIT 1
+      `,
+      [connectionId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Store connection not found' });
+    }
+
+    const connection = result.rows[0];
+
+    try {
+      const { createShopIntegrationFromConnection } = await import('../services/shopIntegration.mjs');
+      const integration = createShopIntegrationFromConnection(connection);
+
+      // Make a very small call depending on platform
+      if (connection.platform === 'woo') {
+        await integration.fetchProducts({ page: 1, perPage: 1 });
+      } else if (connection.platform === 'shopify') {
+        await integration.fetchProducts({ limit: 1 });
+      }
+
+      res.json({ success: true, status: 'ok' });
+    } catch (error) {
+      res.status(200).json({
+        success: false,
+        status: 'error',
+        error: error?.message || 'Unknown error',
+      });
+    }
+  })
+);
+
+// Trigger sync for a store connection (enqueue jobs)
+app.post(
+  '/api/admin/store-connections/:connectionId/trigger-sync',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { connectionId } = req.params;
+    const { full = false } = req.body || {};
+
+    const result = await query(
+      `
+        SELECT id, customer_id
+        FROM store_connections
+        WHERE id = $1
+        LIMIT 1
+      `,
+      [connectionId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Store connection not found' });
+    }
+
+    const row = result.rows[0];
+    const customerId = row.customer_id;
+
+    const { enqueueJob } = await import('../utils/redis.mjs');
+
+    const basePayload = {
+      storeConnectionId: connectionId,
+      customerId,
+      createdAt: Date.now(),
+    };
+
+    // For now always queue one product sync and one order sync job.
+    await enqueueJob('shop_sync_queue', {
+      ...basePayload,
+      type: 'shop_sync_products',
+      page: 1,
+      perPage: full ? 100 : 50,
+    });
+
+    await enqueueJob('shop_sync_queue', {
+      ...basePayload,
+      type: 'shop_sync_orders',
+      page: 1,
+      perPage: full ? 100 : 50,
+    });
+
+    res.json({ success: true, queued: true });
   })
 );
 

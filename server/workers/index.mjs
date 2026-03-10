@@ -11,6 +11,23 @@ const WORKER_CONFIG = {
     concurrency: 5,
     handler: processAIGenerationJob,
   },
+  shop: {
+    queue: 'shop_sync_queue',
+    concurrency: 2,
+    handler: async (job) => {
+      const { type } = job || {};
+      const { runProductSync, runOrderSync } = await import('../services/storeIntegrationService.mjs');
+
+      if (type === 'shop_sync_products') {
+        return await runProductSync(job);
+      }
+      if (type === 'shop_sync_orders') {
+        return await runOrderSync(job);
+      }
+
+      throw new Error(`Unknown shop sync job type: ${type}`);
+    },
+  },
   sms: {
     queue: 'sms_queue',
     concurrency: 10,
