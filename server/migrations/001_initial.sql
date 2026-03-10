@@ -216,6 +216,10 @@ CREATE TABLE IF NOT EXISTS routing_rules (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Ensure flag column exists on older schemas
+ALTER TABLE routing_rules
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
 CREATE INDEX IF NOT EXISTS idx_routing_rules_customer_id ON routing_rules(customer_id);
 CREATE INDEX IF NOT EXISTS idx_routing_rules_active ON routing_rules(customer_id, is_active);
 
@@ -232,6 +236,10 @@ CREATE TABLE IF NOT EXISTS sms_templates (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Ensure active flag exists on older schemas
+ALTER TABLE sms_templates
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
 
 CREATE INDEX IF NOT EXISTS idx_sms_templates_customer_id ON sms_templates(customer_id);
 CREATE INDEX IF NOT EXISTS idx_sms_templates_category ON sms_templates(customer_id, category);
@@ -251,6 +259,10 @@ CREATE TABLE IF NOT EXISTS twilio_numbers (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Ensure active flag exists on older schemas
+ALTER TABLE twilio_numbers
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
 
 CREATE INDEX IF NOT EXISTS idx_twilio_numbers_customer_id ON twilio_numbers(customer_id);
 CREATE INDEX IF NOT EXISTS idx_twilio_numbers_phone ON twilio_numbers(phone_number);
