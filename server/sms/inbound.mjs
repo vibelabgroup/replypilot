@@ -99,6 +99,8 @@ export const applyInboundMessage = async (
   const messageResult = await client.query(
     `INSERT INTO messages (conversation_id, direction, sender, content, twilio_message_sid, channel)
      VALUES ($1, 'inbound', 'lead', $2, $3, $4)
+     ON CONFLICT (twilio_message_sid) DO UPDATE
+     SET content = EXCLUDED.content
      RETURNING id`,
     [conversationId, body, providerMessageId, channel]
   );

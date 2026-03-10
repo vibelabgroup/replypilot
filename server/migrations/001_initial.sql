@@ -318,6 +318,10 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Ensure messages.channel exists for source tracking (sms, voice, etc.)
+ALTER TABLE messages
+    ADD COLUMN IF NOT EXISTS channel VARCHAR(20) DEFAULT 'sms';
+
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_twilio_sid ON messages(twilio_message_sid) WHERE twilio_message_sid IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC);
