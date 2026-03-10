@@ -1,4 +1,5 @@
 import sgMail from '@sendgrid/mail';
+import nodemailer from 'nodemailer';
 import { query } from '../utils/db.mjs';
 import { logInfo, logError, logDebug } from '../utils/logger.mjs';
 import { sendSms } from '../sms/gateway.mjs';
@@ -8,8 +9,34 @@ if (process.env.SENDGRID_API_KEY) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
 
-const FROM_EMAIL = 'noreply@replypilot.dk';
-const FROM_NAME = 'Replypilot';
+const FROM_EMAIL = process.env.SMTP_FROM_EMAIL || 'noreply@replypilot.dk';
+const FROM_NAME = process.env.SMTP_FROM_NAME || 'Replypilot';
+
+// SMTP configuration (Hostinger or other SMTP)
+const SMTP_HOST = process.env.SMTP_HOST || '';
+const SMTP_PORT = Number.parseInt(process.env.SMTP_PORT || '', 10) || 587;
+const SMTP_SECURE = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true';
+const SMTP_USER = process.env.SMTP_USER || '';
+const SMTP_PASS = process.env.SMTP_PASS || '';
+
+let smtpTransport = null;
+
+const getSmtpTransport = () => {
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    return null;
+  }
+  if (smtpTransport) return smtpTransport;
+  smtpTransport = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+    },
+  });
+  return smtpTransport;
+};
 
 // Retry configuration
 const MAX_RETRIES = 3;
@@ -17,8 +44,8 @@ const RETRY_DELAY_MS = 1000;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Send email notification
-export const sendEmail = async (to, subject, html, text = null) => {
+// Low-level SendGrid email sender
+const sendViaSendGrid = async (to, subject, html, text = null) => {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       logDebug('Sending email', { to, subject, attempt });
@@ -56,6 +83,63 @@ export const sendEmail = async (to, subject, html, text = null) => {
       await sleep(RETRY_DELAY_MS * Math.pow(2, attempt - 1));
     }
   }
+};
+
+// Low-level SMTP email sender (Hostinger etc.)
+const sendViaSmtp = async (to, subject, html, text = null) => {
+  const transport = getSmtpTransport();
+  if (!transport) {
+    return {
+      success: false,
+      error: 'SMTP not configured (missing SMTP_HOST/SMTP_USER/SMTP_PASS)',
+      code: 'smtp_not_configured',
+    };
+  }
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      logDebug('Sending email via SMTP', { to, subject, attempt, host: SMTP_HOST });
+
+      await transport.sendMail({
+        from: { address: FROM_EMAIL, name: FROM_NAME },
+        to,
+        subject,
+        html,
+        text: text || html.replace(/<[^>]*>/g, ''),
+      });
+
+      logInfo('SMTP email sent successfully', { to, subject });
+
+      return { success: true };
+    } catch (error) {
+      logError('SMTP email send failed', {
+        attempt,
+        to,
+        subject,
+        error: error.message,
+        code: error.code,
+      });
+
+      if (attempt === MAX_RETRIES) {
+        return {
+          success: false,
+          error: error.message,
+          code: error.code,
+        };
+      }
+
+      await sleep(RETRY_DELAY_MS * Math.pow(2, attempt - 1));
+    }
+  }
+};
+
+// Unified email sender used by the rest of the app.
+// Prefers SendGrid when configured, otherwise falls back to SMTP.
+export const sendEmail = async (to, subject, html, text = null) => {
+  if (process.env.SENDGRID_API_KEY) {
+    return await sendViaSendGrid(to, subject, html, text);
+  }
+  return await sendViaSmtp(to, subject, html, text);
 };
 
 const supportsTypeForEmail = (type, prefs) => {

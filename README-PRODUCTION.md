@@ -70,7 +70,7 @@ Replypilot consists of:
 - [x] Conversion tracking
 
 ### Phase 6: Notifications (✅ Complete)
-- [x] Email notifications via SendGrid
+- [x] Email notifications via SendGrid or SMTP (Hostinger)
 - [x] SMS notifications via Twilio
 - [x] Notification preferences per user
 - [x] Digest emails (daily/weekly)
@@ -458,7 +458,14 @@ Required for production:
 | `TWILIO_ACCOUNT_SID` | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token |
 | `GEMINI_API_KEY` | Google Gemini API key |
-| `SENDGRID_API_KEY` | SendGrid API key |
+| `SENDGRID_API_KEY` | SendGrid API key (optional if using SMTP) |
+| `SMTP_HOST` | SMTP server host (e.g. `smtp.hostinger.com`) |
+| `SMTP_PORT` | SMTP server port (e.g. `587`) |
+| `SMTP_SECURE` | `true` for SSL (465), `false` for STARTTLS (587) |
+| `SMTP_USER` | SMTP username (e.g. `noreply@replypilot.dk`) |
+| `SMTP_PASS` | SMTP password |
+| `SMTP_FROM_EMAIL` | Default from email (e.g. `noreply@replypilot.dk`) |
+| `SMTP_FROM_NAME` | Default from name (e.g. `Replypilot`) |
 
 ## Security Features
 

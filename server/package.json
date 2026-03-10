@@ -29,6 +29,7 @@
     "@google/genai": "^1.38.0",
     "twilio": "^5.4.2",
     "@sendgrid/mail": "^8.1.4",
+    "nodemailer": "^6.9.16",
     "@sentry/node": "^8.54.0",
     "express-rate-limit": "^7.5.0",
     "uuid": "^11.0.5"
