@@ -358,6 +358,9 @@ const getDemoAiSettings = async () => {
   const base = getDefaultAiSettings();
 
   const systemPromptParts = [getDefaultSystemPrompt()];
+  systemPromptParts.push(
+    'Når en kunde beskriver sin opgave eller stiller et spørgsmål, skal du ALTID svare direkte på netop den besked i 1-2 korte, konkrete sætninger. Brug kundens egne ord (f.eks. \"tagrenovering\") i svaret, og undgå lange forklaringer eller salgstaler.'
+  );
   if (agentName) {
     systemPromptParts.unshift(
       `Du er en AI-receptionist ved navn ${agentName}.`

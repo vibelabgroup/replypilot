@@ -110,7 +110,15 @@ export const BuilderLiveDemo: React.FC = () => {
                 text: msg.text,
             }));
 
+        const startedAt = Date.now();
         const aiResponseText = await generateAIResponse(userMsgText, history);
+        const elapsed = Date.now() - startedAt;
+        const minDelay = 2000;
+        const maxDelay = 4000;
+        const targetDelay = minDelay + Math.random() * (maxDelay - minDelay);
+        if (elapsed < targetDelay) {
+            await new Promise((resolve) => setTimeout(resolve, targetDelay - elapsed));
+        }
         setIsTyping(false);
 
         const aiMsg: ChatMessage = {

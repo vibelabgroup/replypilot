@@ -64,7 +64,7 @@ export const PhoneDemo: React.FC = () => {
         };
         setMessages(prev => [...prev, userMsg]);
 
-        // Get AI Response
+        // Get AI Response with simulated typing delay (2-4 seconds total)
         setIsTyping(true);
         const history = messages
             .filter((msg) => msg.type === 'user' || msg.type === 'system')
@@ -72,7 +72,16 @@ export const PhoneDemo: React.FC = () => {
                 role: msg.type === 'user' ? 'user' as const : 'model' as const,
                 text: msg.text
             }));
+
+        const startedAt = Date.now();
         const aiResponseText = await generateAIResponse(userMsgText, history);
+        const elapsed = Date.now() - startedAt;
+        const minDelay = 2000;
+        const maxDelay = 4000;
+        const targetDelay = minDelay + Math.random() * (maxDelay - minDelay);
+        if (elapsed < targetDelay) {
+            await new Promise((resolve) => setTimeout(resolve, targetDelay - elapsed));
+        }
         setIsTyping(false);
 
         // Add AI Message
