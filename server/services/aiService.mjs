@@ -619,6 +619,19 @@ const generateDemoResponse = async (conversationId, leadMessage) => {
 
     const history = historyResult.rows.reverse();
 
+    // For the very first SMS after a demo call, always send a fixed text
+    // instead of a model-generated response so the behavior matches
+    // the marketing/demo promise exactly.
+    if (history.length === 0) {
+      const response =
+        'Jeg er lige gået ind i et møde, hvornår kan jeg ringe tilbage?';
+      return {
+        success: true,
+        response,
+        aiSettings,
+      };
+    }
+
     // Build system prompt
     const systemPrompt = buildSystemPrompt(aiSettings);
 
