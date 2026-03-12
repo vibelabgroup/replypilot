@@ -126,6 +126,8 @@ app.get(
             c.status,
             c.subscription_status,
             c.current_period_end,
+            c.shopify_enabled,
+            c.max_store_connections,
             c.sms_provider,
             c.fonecloud_sender_id,
             c.stripe_customer_id,
@@ -449,6 +451,76 @@ app.patch(
     res.json({
       success: true,
       customer,
+    });
+  })
+);
+
+// Update shop integration feature flags and limits for a customer
+app.patch(
+  '/api/admin/customers/:id/shop-integrations',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { shopify_enabled, max_store_connections } = req.body || {};
+
+    if (
+      shopify_enabled !== undefined &&
+      typeof shopify_enabled !== 'boolean'
+    ) {
+      return res
+        .status(400)
+        .json({ error: 'shopify_enabled must be a boolean when provided' });
+    }
+
+    if (
+      max_store_connections !== undefined &&
+      max_store_connections !== null &&
+      (typeof max_store_connections !== 'number' ||
+        !Number.isInteger(max_store_connections) ||
+        max_store_connections < 0)
+    ) {
+      return res.status(400).json({
+        error:
+          'max_store_connections must be a non-negative integer or null when provided',
+      });
+    }
+
+    const fields = [];
+    const params = [];
+    let idx = 1;
+
+    if (shopify_enabled !== undefined) {
+      fields.push(`shopify_enabled = $${idx++}`);
+      params.push(shopify_enabled);
+    }
+    if (max_store_connections !== undefined) {
+      fields.push(`max_store_connections = $${idx++}`);
+      params.push(max_store_connections === null ? null : max_store_connections);
+    }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    params.push(id);
+
+    const result = await query(
+      `
+        UPDATE customers
+        SET ${fields.join(', ')}, updated_at = NOW()
+        WHERE id = $${idx}
+        RETURNING id, email, name, shopify_enabled, max_store_connections
+      `,
+      params
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    res.json({
+      success: true,
+      customer: result.rows[0],
     });
   })
 );
@@ -876,6 +948,7 @@ app.get(
           sc.store_name,
           sc.store_domain,
           sc.status,
+          sc.support_emails,
           sc.last_sync_at,
           sc.created_at,
           sc.updated_at
@@ -895,7 +968,7 @@ app.post(
   requireAdmin,
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { platform, store_name, store_domain, credentials } = req.body || {};
+    const { platform, store_name, store_domain, credentials, support_emails } = req.body || {};
 
     if (!platform || !['woo', 'shopify'].includes(platform)) {
       return res
@@ -907,8 +980,53 @@ app.post(
       return res.status(400).json({ error: 'store_domain is required' });
     }
 
+    // Enforce per-customer max_store_connections limit when configured
+    const customerResult = await query(
+      `
+        SELECT max_store_connections
+        FROM customers
+        WHERE id = $1
+      `,
+      [id]
+    );
+
+    if (customerResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    const maxStoreConnections = customerResult.rows[0].max_store_connections;
+
+    if (typeof maxStoreConnections === 'number') {
+      const countResult = await query(
+        `
+          SELECT COUNT(*) AS total
+          FROM store_connections
+          WHERE customer_id = $1
+        `,
+        [id]
+      );
+      const total = parseInt(countResult.rows[0].total, 10) || 0;
+      if (total >= maxStoreConnections) {
+        return res.status(400).json({
+          error: `Customer has reached the maximum number of store connections (${maxStoreConnections})`,
+        });
+      }
+    }
+
     const safeCredentials =
       credentials && typeof credentials === 'object' ? credentials : {};
+
+    let safeSupportEmails = [];
+    if (Array.isArray(support_emails)) {
+      safeSupportEmails = support_emails.filter(
+        (value) => typeof value === 'string' && value.trim().length > 0
+      );
+    } else if (typeof support_emails === 'string') {
+      safeSupportEmails = support_emails
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
 
     const result = await query(
       `
@@ -918,12 +1036,13 @@ app.post(
           store_name,
           store_domain,
           credentials,
-          status
+          status,
+          support_emails
         )
-        VALUES ($1, $2, $3, $4, $5, 'active')
+        VALUES ($1, $2, $3, $4, $5, 'active', $6)
         RETURNING *
       `,
-      [id, platform, store_name || null, store_domain.trim(), safeCredentials]
+      [id, platform, store_name || null, store_domain.trim(), safeCredentials, safeSupportEmails]
     );
 
     res.status(201).json(result.rows[0]);
@@ -935,7 +1054,7 @@ app.put(
   requireAdmin,
   asyncHandler(async (req, res) => {
     const { connectionId } = req.params;
-    const { store_name, store_domain, status, credentials } = req.body || {};
+    const { store_name, store_domain, status, credentials, support_emails } = req.body || {};
 
     const fields = [];
     const params = [];
@@ -958,6 +1077,22 @@ app.put(
       params.push(
         credentials && typeof credentials === 'object' ? credentials : {}
       );
+    }
+
+    if (support_emails !== undefined) {
+      let safeSupportEmails = [];
+      if (Array.isArray(support_emails)) {
+        safeSupportEmails = support_emails.filter(
+          (value) => typeof value === 'string' && value.trim().length > 0
+        );
+      } else if (typeof support_emails === 'string') {
+        safeSupportEmails = support_emails
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+      }
+      fields.push(`support_emails = $${idx++}`);
+      params.push(safeSupportEmails);
     }
 
     if (fields.length === 0) {
@@ -1064,6 +1199,12 @@ app.post(
 
     const connection = result.rows[0];
 
+    if (connection.status !== 'active') {
+      return res.status(400).json({
+        error: 'Store connection is inactive',
+      });
+    }
+
     try {
       const { createShopIntegrationFromConnection } = await import('../services/shopIntegration.mjs');
       const integration = createShopIntegrationFromConnection(connection);
@@ -1096,7 +1237,7 @@ app.post(
 
     const result = await query(
       `
-        SELECT id, customer_id
+        SELECT id, customer_id, status
         FROM store_connections
         WHERE id = $1
         LIMIT 1
@@ -1109,6 +1250,11 @@ app.post(
     }
 
     const row = result.rows[0];
+
+    if (row.status !== 'active') {
+      return res.status(400).json({ error: 'Store connection is inactive' });
+    }
+
     const customerId = row.customer_id;
 
     const { enqueueJob } = await import('../utils/redis.mjs');

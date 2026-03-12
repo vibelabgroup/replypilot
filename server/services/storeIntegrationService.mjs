@@ -226,6 +226,16 @@ export const runProductSync = async ({ storeConnectionId, customerId, page = 1, 
   }
 
   const connection = connectionResult.rows[0];
+
+  if (connection.status !== 'active') {
+    logInfo('Skipping product sync for inactive store connection', {
+      storeConnectionId,
+      customerId,
+      status: connection.status,
+    });
+    return { success: false, reason: 'store_connection_inactive' };
+  }
+
   const integration = createShopIntegrationFromConnection(connection);
 
   const products = await integration.fetchProducts({ page, perPage, updatedAfter });
@@ -264,6 +274,16 @@ export const runOrderSync = async ({ storeConnectionId, customerId, page = 1, pe
   }
 
   const connection = connectionResult.rows[0];
+
+  if (connection.status !== 'active') {
+    logInfo('Skipping order sync for inactive store connection', {
+      storeConnectionId,
+      customerId,
+      status: connection.status,
+    });
+    return { success: false, reason: 'store_connection_inactive' };
+  }
+
   const integration = createShopIntegrationFromConnection(connection);
 
   const orders = await integration.fetchOrders({ page, perPage, updatedAfter, email });
@@ -292,6 +312,7 @@ export const lookupOrderByEmailAndNumber = async ({ customerId, email, orderNumb
       FROM store_orders o
       JOIN store_connections sc ON sc.id = o.store_connection_id
       WHERE sc.customer_id = $1
+        AND sc.status = 'active'
         AND ($2::TEXT IS NULL OR lower(o.email) = lower($2))
         AND ($3::TEXT IS NULL OR o.external_id = $3)
       ORDER BY o.created_at_shop DESC NULLS LAST
@@ -318,6 +339,7 @@ export const searchProductsForCustomer = async ({ customerId, queryText, limit =
       FROM store_products p
       JOIN store_connections sc ON sc.id = p.store_connection_id
       WHERE sc.customer_id = $1
+        AND sc.status = 'active'
         AND (
           p.sku ILIKE $2
           OR p.name ILIKE $2
@@ -344,6 +366,7 @@ export const getProductDetailsForCustomer = async ({ customerId, externalId }) =
       FROM store_products p
       JOIN store_connections sc ON sc.id = p.store_connection_id
       WHERE sc.customer_id = $1
+        AND sc.status = 'active'
         AND p.external_id = $2
       LIMIT 1
     `,
@@ -366,6 +389,7 @@ export const listRecentOrdersForCustomer = async ({ customerId, email, limit = 5
       FROM store_orders o
       JOIN store_connections sc ON sc.id = o.store_connection_id
       WHERE sc.customer_id = $1
+        AND sc.status = 'active'
         AND lower(o.email) = lower($2)
       ORDER BY o.created_at_shop DESC NULLS LAST
       LIMIT $3

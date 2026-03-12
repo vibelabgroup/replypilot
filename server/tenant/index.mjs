@@ -38,6 +38,46 @@ app.get('/api/tenant/shops/shopify/connect', async (req, res) => {
         .json({ error: 'Missing ?shop=your-shop.myshopify.com' });
     }
 
+    // Check that Shopify integrations are enabled and within the store limit
+    const customerResult = await query(
+      `
+        SELECT shopify_enabled, max_store_connections
+        FROM customers
+        WHERE id = $1
+      `,
+      [customerId]
+    );
+
+    if (customerResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    const { shopify_enabled: shopifyEnabled, max_store_connections: maxStoreConnections } =
+      customerResult.rows[0] || {};
+
+    if (!shopifyEnabled) {
+      return res
+        .status(403)
+        .json({ error: 'Shopify integration is not enabled for this customer' });
+    }
+
+    if (typeof maxStoreConnections === 'number') {
+      const countResult = await query(
+        `
+          SELECT COUNT(*) AS total
+          FROM store_connections
+          WHERE customer_id = $1
+        `,
+        [customerId]
+      );
+      const total = parseInt(countResult.rows[0].total, 10) || 0;
+      if (total >= maxStoreConnections) {
+        return res.status(400).json({
+          error: `You have reached the maximum number of store connections (${maxStoreConnections})`,
+        });
+      }
+    }
+
     const clientId = process.env.SHOPIFY_CLIENT_ID;
     const redirectUri = process.env.SHOPIFY_REDIRECT_URI;
     const scopes =
@@ -141,6 +181,57 @@ app.get('/api/tenant/shops/shopify/callback', async (req, res) => {
       return res.status(500).send('No access token in response');
     }
 
+    // Check customer eligibility and store connection limits
+    const customerResult = await query(
+      `
+        SELECT shopify_enabled, max_store_connections
+        FROM customers
+        WHERE id = $1
+      `,
+      [customerId]
+    );
+
+    if (customerResult.rowCount === 0) {
+      return res.status(400).send('Customer not found');
+    }
+
+    const { shopify_enabled: shopifyEnabled, max_store_connections: maxStoreConnections } =
+      customerResult.rows[0] || {};
+
+    if (!shopifyEnabled) {
+      return res.status(403).send('Shopify integration is not enabled for this customer');
+    }
+
+    // Allow reconnecting an existing store regardless of current count
+    const existingStore = await query(
+      `
+        SELECT id
+        FROM store_connections
+        WHERE customer_id = $1
+          AND platform = 'shopify'
+          AND store_domain = $2
+        LIMIT 1
+      `,
+      [customerId, shop]
+    );
+
+    if (existingStore.rowCount === 0 && typeof maxStoreConnections === 'number') {
+      const countResult = await query(
+        `
+          SELECT COUNT(*) AS total
+          FROM store_connections
+          WHERE customer_id = $1
+        `,
+        [customerId]
+      );
+      const total = parseInt(countResult.rows[0].total, 10) || 0;
+      if (total >= maxStoreConnections) {
+        return res
+          .status(400)
+          .send('Maximum number of store connections reached for this customer');
+      }
+    }
+
     await query(
       `
         INSERT INTO store_connections (customer_id, platform, store_name, store_domain, credentials, status)
@@ -184,6 +275,7 @@ app.get('/api/tenant/shops', async (req, res) => {
             store_name,
             store_domain,
             status,
+            support_emails,
             last_sync_at,
             created_at,
             updated_at
@@ -209,7 +301,7 @@ app.post('/api/tenant/shops/:id/sync', async (req, res) => {
 
       const row = await query(
         `
-          SELECT id
+          SELECT id, status
           FROM store_connections
           WHERE id = $1 AND customer_id = $2
           LIMIT 1
@@ -220,6 +312,11 @@ app.post('/api/tenant/shops/:id/sync', async (req, res) => {
         return res
           .status(404)
           .json({ error: 'Store connection not found' });
+      }
+
+      const connection = row.rows[0];
+      if (connection.status !== 'active') {
+        return res.status(400).json({ error: 'Store connection is inactive' });
       }
 
       const basePayload = {
