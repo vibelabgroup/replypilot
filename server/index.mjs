@@ -13,6 +13,7 @@ import { getLeads } from "./services/conversationService.mjs";
 import { getNotificationPreferences, updateNotificationPreferences } from "./services/settingsService.mjs";
 import { requestPasswordReset, resetPassword as resetPasswordWithToken } from "./services/authService.mjs";
 import { signTenantToken } from "./tenant/auth.mjs";
+import tenantApp from "./tenant/index.mjs";
 import { sendEmail } from "./services/notificationService.mjs";
 import { validate, notificationPreferencesSchema } from "./utils/validators.mjs";
 import {
@@ -124,6 +125,9 @@ async function authMiddleware(req, res, next) {
 
 app.use(express.json());
 app.use(authMiddleware);
+
+// Mount tenant routes
+app.use(tenantApp);
 
 function requireAuth(req, res, next) {
   if (!req.auth) {
