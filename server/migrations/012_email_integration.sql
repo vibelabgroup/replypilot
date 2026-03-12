@@ -1,10 +1,9 @@
 -- Migration: 012_email_integration.sql
 -- Email OAuth accounts and normalized email messages
 
--- Email accounts per customer (OAuth-based mailboxes)
 CREATE TABLE IF NOT EXISTS email_accounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     provider TEXT NOT NULL, -- 'gmail' | 'outlook'
     email_address TEXT NOT NULL,
     display_name TEXT,
@@ -28,7 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_email_accounts_email
 -- Normalized inbound email messages
 CREATE TABLE IF NOT EXISTS email_messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     email_account_id UUID NOT NULL REFERENCES email_accounts(id) ON DELETE CASCADE,
     provider_message_id TEXT NOT NULL,
     thread_id TEXT,
