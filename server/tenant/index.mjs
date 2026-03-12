@@ -102,11 +102,18 @@ app.get('/api/tenant/email/:provider/connect', async (req, res) => {
 
     const authHeader = req.headers.authorization || '';
     const [, token] = authHeader.split(' ');
-    if (!token) {
-      return res.status(401).json({ error: 'Missing tenant token' });
+    let customerId = null;
+
+    if (token) {
+      const payload = await verifyTenantToken(token);
+      customerId = payload.customerId;
+    } else if (req.auth && req.auth.customerId) {
+      customerId = req.auth.customerId;
     }
-    const payload = await verifyTenantToken(token);
-    const { customerId } = payload;
+
+    if (!customerId) {
+      return res.status(401).json({ error: 'Missing authentication' });
+    }
 
     const redirectPath =
       typeof req.query.redirect === 'string' && req.query.redirect.trim()
@@ -353,11 +360,18 @@ app.get('/api/tenant/shops/shopify/connect', async (req, res) => {
     // customerId in state instead.
     const authHeader = req.headers.authorization || '';
     const [, token] = authHeader.split(' ');
-    if (!token) {
-      return res.status(401).json({ error: 'Missing tenant token' });
+    let customerId = null;
+
+    if (token) {
+      const payload = await verifyTenantToken(token);
+      customerId = payload.customerId;
+    } else if (req.auth && req.auth.customerId) {
+      customerId = req.auth.customerId;
     }
-    const payload = await verifyTenantToken(token);
-    const { customerId } = payload;
+
+    if (!customerId) {
+      return res.status(401).json({ error: 'Missing authentication' });
+    }
 
     const { shop } = req.query;
     if (!shop || typeof shop !== 'string') {

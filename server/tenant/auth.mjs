@@ -70,6 +70,12 @@ export const tenantAuth = async (req, res, next) => {
     const [, token] = header.split(' ');
 
     if (!token) {
+      // Fallback: Check if the main server's authMiddleware has already
+      // authenticated the user via cookies (req.auth.customerId).
+      if (req.auth && req.auth.customerId) {
+        req.tenant = { customerId: req.auth.customerId };
+        return next();
+      }
       return res.status(401).json({ error: 'Missing Authorization Bearer token' });
     }
 
