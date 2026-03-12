@@ -38,6 +38,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [checkoutError, setCheckoutError] = useState<string | null>(null);
     const [refreshingEntitlement, setRefreshingEntitlement] = useState(false);
+    const [shops, setShops] = useState<any[]>([]);
+    const [shopsLoading, setShopsLoading] = useState(false);
+    const [shopsError, setShopsError] = useState<string | null>(null);
+    const [shopifyDomain, setShopifyDomain] = useState('');
+    const [connectingShopify, setConnectingShopify] = useState(false);
+    const [syncingShopId, setSyncingShopId] = useState<string | null>(null);
+    const [shopifyBanner, setShopifyBanner] = useState<string | null>(null);
     const isLocked = !hasActiveSubscription;
 
     useEffect(() => {
@@ -83,6 +90,52 @@ export const Dashboard: React.FC<DashboardProps> = ({
             }
         };
         fetchSettings();
+    }, []);
+
+    // Load existing shop integrations (e-commerce) when settings tab is active
+    const loadShops = async () => {
+        try {
+            setShopsLoading(true);
+            setShopsError(null);
+            const apiBase =
+                import.meta.env.VITE_API_BASE_URL || window.location.origin.replace(/\/$/, "");
+            const res = await fetch(`${apiBase}/api/tenant/shops`, {
+                credentials: 'include',
+            });
+            if (!res.ok) {
+                throw new Error('Kunne ikke hente e-commerce integrationer');
+            }
+            const data = await res.json();
+            setShops(Array.isArray(data.data) ? data.data : []);
+        } catch (err: any) {
+            setShopsError(err?.message || 'Uventet fejl ved indlæsning af e-commerce integrationer');
+        } finally {
+            setShopsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'settings' && !isLocked) {
+            loadShops();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab, isLocked]);
+
+    // Detect Shopify callback (?shopify=connected) and show banner / reload shops
+    useEffect(() => {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('shopify') === 'connected') {
+                setActiveTab('settings');
+                setShopifyBanner('Shopify store connected successfully.');
+                if (!isLocked) {
+                    loadShops();
+                }
+            }
+        } catch {
+            // ignore
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadNotificationHistory = async () => {
@@ -802,6 +855,168 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                        />
                                    </div>
                                </div>
+                           </div>
+
+                           <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                               <h2 className="text-lg font-bold text-slate-900 mb-1">e-Commerce Integration</h2>
+                               <p className="text-sm text-slate-500 mb-6">
+                                   Forbind din Shopify-webshop, så AI&apos;en kan bruge produkt- og ordredata i sine svar.
+                               </p>
+
+                               <div className="space-y-4 mb-4">
+                                   <div className="grid grid-cols-1 md:grid-cols-[2fr,auto] gap-3 items-end">
+                                       <div>
+                                           <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">
+                                               Shopify shop-domæne
+                                           </label>
+                                           <input
+                                               type="text"
+                                               value={shopifyDomain}
+                                               onChange={(e) => setShopifyDomain(e.target.value)}
+                                               className="w-full h-10 px-3 rounded-lg bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-sm"
+                                               placeholder="fx. test-shop.myshopify.com"
+                                           />
+                                           <p className="mt-1 text-[11px] text-slate-500">
+                                               Brug dit myshopify.com-domæne. Du bliver sendt til Shopify for at godkende forbindelsen.
+                                           </p>
+                                       </div>
+                                       <div>
+                                           <button
+                                               type="button"
+                                               disabled={isLocked || !shopifyDomain.trim() || connectingShopify}
+                                               onClick={() => {
+                                                   if (!shopifyDomain.trim()) return;
+                                                   setConnectingShopify(true);
+                                                   try {
+                                                       const apiBase =
+                                                           import.meta.env.VITE_API_BASE_URL ||
+                                                           window.location.origin.replace(/\/$/, '');
+                                                       const url = `${apiBase}/api/tenant/shops/shopify/connect?shop=${encodeURIComponent(
+                                                           shopifyDomain.trim()
+                                                       )}`;
+                                                       window.location.href = url;
+                                                   } catch {
+                                                       setConnectingShopify(false);
+                                                   }
+                                               }}
+                                               className="w-full h-10 inline-flex items-center justify-center rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-60"
+                                           >
+                                               {connectingShopify ? 'Omdirigerer…' : 'Forbind Shopify'}
+                                           </button>
+                                       </div>
+                                   </div>
+                               </div>
+
+                               {shopsError && (
+                                   <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2 mb-3">
+                                       {shopsError}
+                                   </p>
+                               )}
+
+                               {shopsLoading && (
+                                   <p className="text-xs text-slate-500">Indlæser e-commerce integrationer…</p>
+                               )}
+
+                               {!shopsLoading && shops.length > 0 && (
+                                   <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
+                                       <table className="min-w-full text-sm">
+                                           <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                                               <tr>
+                                                   <th className="px-3 py-2">Platform</th>
+                                                   <th className="px-3 py-2">Butik</th>
+                                                   <th className="px-3 py-2">Status</th>
+                                                   <th className="px-3 py-2">Sidste sync</th>
+                                                   <th className="px-3 py-2 text-right">Handling</th>
+                                               </tr>
+                                           </thead>
+                                           <tbody>
+                                               {shops.map((shop) => (
+                                                   <tr
+                                                       key={shop.id}
+                                                       className="border-t border-slate-100 bg-white hover:bg-slate-50/80"
+                                                   >
+                                                       <td className="px-3 py-2 text-xs font-mono text-slate-700">
+                                                           {shop.platform}
+                                                       </td>
+                                                       <td className="px-3 py-2 text-xs text-slate-800">
+                                                           <div className="font-medium">
+                                                               {shop.store_name || shop.store_domain}
+                                                           </div>
+                                                           {shop.store_name && (
+                                                               <div className="text-[11px] text-slate-500">
+                                                                   {shop.store_domain}
+                                                               </div>
+                                                           )}
+                                                       </td>
+                                                       <td className="px-3 py-2 text-xs">
+                                                           <span className="inline-flex items-center rounded-full border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                                                               {shop.status}
+                                                           </span>
+                                                       </td>
+                                                       <td className="px-3 py-2 text-xs text-slate-500">
+                                                           {shop.last_sync_at
+                                                               ? new Date(shop.last_sync_at).toLocaleString('da-DK')
+                                                               : 'Aldrig'}
+                                                       </td>
+                                                       <td className="px-3 py-2 text-right">
+                                                           <button
+                                                               type="button"
+                                                               disabled={syncingShopId === shop.id}
+                                                               onClick={async () => {
+                                                                   try {
+                                                                       setSyncingShopId(shop.id);
+                                                                       const apiBase =
+                                                                           import.meta.env.VITE_API_BASE_URL ||
+                                                                           window.location.origin.replace(/\/$/, '');
+                                                                       const res = await fetch(
+                                                                           `${apiBase}/api/tenant/shops/${shop.id}/sync`,
+                                                                           {
+                                                                               method: 'POST',
+                                                                               credentials: 'include',
+                                                                           }
+                                                                       );
+                                                                       const payload = await res
+                                                                           .json()
+                                                                           .catch(() => ({}));
+                                                                       if (!res.ok || payload.success === false) {
+                                                                           throw new Error(
+                                                                               payload?.error ||
+                                                                                   'Kunne ikke køe sync – se logs for detaljer'
+                                                                           );
+                                                                       }
+                                                                       setShopifyBanner('Sync job køet for webshoppen');
+                                                                       await loadShops();
+                                                                   } catch (err: any) {
+                                                                       setShopsError(
+                                                                           err?.message || 'Uventet fejl ved sync'
+                                                                       );
+                                                                   } finally {
+                                                                       setSyncingShopId(null);
+                                                                   }
+                                                               }}
+                                                               className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                                                           >
+                                                               {syncingShopId === shop.id ? 'Synker…' : 'Sync nu'}
+                                                           </button>
+                                                       </td>
+                                                   </tr>
+                                               ))}
+                                           </tbody>
+                                       </table>
+                                   </div>
+                               )}
+
+                               {!shopsLoading && shops.length === 0 && (
+                                   <p className="mt-2 text-xs text-slate-500">
+                                       Ingen e-commerce integrationer endnu. Forbind din første Shopify-butik ovenfor.
+                                   </p>
+                               )}
+
+                               {shopifyBanner && (
+                                   <p className="mt-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-md px-3 py-2">
+                                       {shopifyBanner}
+                                   </p>
+                               )}
                            </div>
 
                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">

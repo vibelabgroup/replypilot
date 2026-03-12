@@ -934,6 +934,87 @@ app.get(
   })
 );
 
+// Email accounts (OAuth) visibility and control for a customer
+app.get(
+  '/api/admin/customers/:id/email-accounts',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await query(
+      `
+        SELECT
+          id,
+          provider,
+          email_address,
+          display_name,
+          status,
+          last_sync_at,
+          created_at,
+          updated_at
+        FROM email_accounts
+        WHERE customer_id = $1
+        ORDER BY created_at DESC
+      `,
+      [id]
+    );
+
+    res.json({ data: result.rows });
+  })
+);
+
+app.patch(
+  '/api/admin/email-accounts/:accountId',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { accountId } = req.params;
+    const { status } = req.body || {};
+
+    if (status && !['active', 'disabled', 'error'].includes(status)) {
+      return res.status(400).json({
+        error: "Invalid status. Must be 'active', 'disabled', or 'error'.",
+      });
+    }
+
+    const fields = [];
+    const params = [];
+    let idx = 1;
+
+    if (status !== undefined) {
+      fields.push(`status = $${idx++}`);
+      params.push(status);
+      if (status === 'disabled') {
+        fields.push(`access_token = NULL`);
+        fields.push(`refresh_token = NULL`);
+      }
+    }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    params.push(accountId);
+
+    const result = await query(
+      `
+        UPDATE email_accounts
+        SET ${fields.join(', ')}, updated_at = NOW()
+        WHERE id = $${idx}
+        RETURNING id, provider, email_address, status, last_sync_at, created_at, updated_at
+      `,
+      params
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Email account not found' });
+    }
+
+    res.json({
+      success: true,
+      account: result.rows[0],
+    });
+  })
+);
+
 // Store connections (WooCommerce / Shopify) CRUD for a customer
 app.get(
   '/api/admin/customers/:id/store-connections',

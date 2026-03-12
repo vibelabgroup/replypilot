@@ -52,6 +52,9 @@ type Customer = {
   notify_sms_new_message?: boolean;
   notify_digest_type?: string | null;
   notify_digest_time?: string | null;
+  // Shop integrations
+  shopify_enabled?: boolean;
+  max_store_connections?: number | null;
 };
 
 type Usage = {
@@ -70,6 +73,8 @@ type StoreConnection = {
   store_name: string | null;
   store_domain: string;
   status: string;
+   // optional per-store support emails for routing
+  support_emails?: string[] | null;
   last_sync_at: string | null;
   created_at: string;
   updated_at: string;
@@ -124,6 +129,10 @@ export const CustomerDetailPage: React.FC = () => {
   const [newStoreCredentials, setNewStoreCredentials] = useState('');
   const [testingStoreId, setTestingStoreId] = useState<string | null>(null);
   const [syncingStoreId, setSyncingStoreId] = useState<string | null>(null);
+  const [updatingStoreStatusId, setUpdatingStoreStatusId] = useState<string | null>(null);
+  const [shopifyEnabled, setShopifyEnabled] = useState<boolean>(false);
+  const [maxStoreConnections, setMaxStoreConnections] = useState<number | ''>('');
+  const [savingShopIntegrations, setSavingShopIntegrations] = useState(false);
 
   const apiBase =
     import.meta.env.VITE_ADMIN_API_BASE_URL || 'https://admin-api.replypilot.dk';
@@ -158,6 +167,11 @@ export const CustomerDetailPage: React.FC = () => {
       setAiSecondaryProvider(secondary === 'gemini' || secondary === 'openai' || secondary === 'groq' ? secondary : '');
       setAiGeminiModel((data as any).customer.ai_gemini_model || '');
       setAiGroqModel((data as any).customer.ai_groq_model || '');
+      setShopifyEnabled(Boolean((data as any).customer.shopify_enabled));
+      const maxStoresRaw = (data as any).customer.max_store_connections;
+      setMaxStoreConnections(
+        typeof maxStoresRaw === 'number' && Number.isFinite(maxStoresRaw) ? maxStoresRaw : ''
+      );
     } catch (err: any) {
       setError(err?.message || 'Uventet fejl');
     } finally {
@@ -348,6 +362,35 @@ export const CustomerDetailPage: React.FC = () => {
     }
   };
 
+  const handleSaveShopIntegrations = async () => {
+    if (!id) return;
+    setSavingShopIntegrations(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/admin/customers/${id}/shop-integrations`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          shopify_enabled: shopifyEnabled,
+          max_store_connections:
+            typeof maxStoreConnections === 'number' ? maxStoreConnections : null,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload?.success === false) {
+        throw new Error(payload?.error || 'Kunne ikke opdatere shop-integrationer');
+      }
+      setMessage('Shop-integrationer opdateret');
+      await load();
+    } catch (err: any) {
+      setError(err?.message || 'Uventet fejl ved opdatering af shop-integrationer');
+    } finally {
+      setSavingShopIntegrations(false);
+    }
+  };
+
   if (loading) {
     return <p className="text-sm text-slate-600">Indlæser kunde…</p>;
   }
@@ -468,6 +511,54 @@ export const CustomerDetailPage: React.FC = () => {
               className="w-full rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
             >
               {saving ? 'Gemmer…' : 'Gem SMS-indstillinger'}
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-white p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-slate-900 mb-1">e-Commerce / Shopify</h2>
+          <p className="text-xs text-slate-600">
+            Styr om denne kunde må forbinde Shopify, og hvor mange webshops de kan tilkoble.
+          </p>
+          <div className="space-y-2">
+            <label className="inline-flex items-center gap-2 text-xs text-slate-700">
+              <input
+                type="checkbox"
+                checked={shopifyEnabled}
+                onChange={(e) => setShopifyEnabled(e.target.checked)}
+              />
+              <span>Shopify-integration aktiveret</span>
+            </label>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Maks. antal butiksintegrationer
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={maxStoreConnections}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) {
+                    setMaxStoreConnections('');
+                  } else {
+                    const n = Number(v);
+                    setMaxStoreConnections(Number.isFinite(n) && n >= 0 ? n : '');
+                  }
+                }}
+                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                placeholder="Tom eller 0 = ingen speciel grænse"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleSaveShopIntegrations}
+              disabled={savingShopIntegrations}
+              className="inline-flex items-center rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {savingShopIntegrations ? 'Gemmer…' : 'Gem e-commerce indstillinger'}
             </button>
           </div>
         </div>
@@ -884,6 +975,7 @@ export const CustomerDetailPage: React.FC = () => {
                   <th className="px-3 py-2">Platform</th>
                   <th className="px-3 py-2">Butik</th>
                   <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Support-emails</th>
                   <th className="px-3 py-2">Sidste sync</th>
                   <th className="px-3 py-2 text-right">Handling</th>
                 </tr>
@@ -908,9 +1000,47 @@ export const CustomerDetailPage: React.FC = () => {
                       )}
                     </td>
                     <td className="px-3 py-2 text-xs">
-                      <span className="inline-flex items-center rounded-full border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                        {sc.status}
-                      </span>
+                      <select
+                        value={sc.status}
+                        onChange={async (e) => {
+                          const nextStatus = e.target.value || 'active';
+                          setUpdatingStoreStatusId(sc.id);
+                          setStoresError(null);
+                          try {
+                            const res = await fetch(
+                              `${apiBase}/api/admin/store-connections/${sc.id}`,
+                              {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ status: nextStatus }),
+                              }
+                            );
+                            const payload = await res.json().catch(() => ({}));
+                            if (!res.ok) {
+                              throw new Error(
+                                payload?.error || 'Kunne ikke opdatere status for butikskobling'
+                              );
+                            }
+                            setMessage('Status for butikskobling opdateret');
+                            await loadStores();
+                          } catch (err: any) {
+                            setStoresError(err?.message || 'Uventet fejl ved statusopdatering');
+                          } finally {
+                            setUpdatingStoreStatusId(null);
+                          }
+                        }}
+                        disabled={updatingStoreStatusId === sc.id}
+                        className="w-full rounded-md border border-slate-300 px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 bg-white"
+                      >
+                        <option value="active">active</option>
+                        <option value="inactive">inactive</option>
+                      </select>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-600">
+                      {Array.isArray(sc.support_emails) && sc.support_emails.length > 0
+                        ? sc.support_emails.join(', ')
+                        : '—'}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-500">
                       {sc.last_sync_at
