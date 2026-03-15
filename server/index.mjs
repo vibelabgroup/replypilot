@@ -5,9 +5,11 @@ import { fileURLToPath } from "url";
 import cors from "cors";
 import Stripe from "stripe";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { logInfo, logWarn, logError } from "./logger.mjs";
 import { handleIncomingMessage, provisionNumber } from "./sms/gateway.mjs";
-import { handleIncomingVoiceDemo } from "./services/twilioService.mjs";
+import { handleIncomingVoiceDemo, verifyWebhookSignature } from "./services/twilioService.mjs";
 import { generateDemoLiveResponse, analyzeCompanyProfile } from "./services/aiService.mjs";
 import { getLeads } from "./services/conversationService.mjs";
 import { getNotificationPreferences, updateNotificationPreferences } from "./services/settingsService.mjs";
@@ -76,6 +78,27 @@ app.use(
 );
 
 app.use(cookieParser());
+app.use(helmet());
+
+// CSRF origin check: reject cross-origin state-changing requests
+app.use((req, res, next) => {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
+  const origin = req.headers.origin;
+  if (!origin) return next();
+  if (origin === frontendUrl) return next();
+  return res.status(403).json({ error: "Forbidden" });
+});
+
+// Rate limiter for authentication endpoints
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  skip: () => process.env.NODE_ENV === "test",
+  message: { error: "Too many attempts, please try again later" },
+});
 
 async function sendPasswordResetEmail(email, token) {
   if (!token) return;
@@ -98,7 +121,7 @@ function setSessionCookie(res, token, expiresAt) {
   res.cookie("rp_session", token, {
     httpOnly: true,
     secure: true,
-    sameSite: "lax",
+    sameSite: "strict",
     expires: expiresAt,
   });
 }
@@ -334,6 +357,16 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
 
 // Twilio incoming SMS webhook (form-urlencoded)
 app.post("/webhook/twilio", express.urlencoded({ extended: true }), async (req, res) => {
+  // Verify Twilio webhook signature
+  if (process.env.TWILIO_AUTH_TOKEN) {
+    const twilioSig = req.headers["x-twilio-signature"] || "";
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+    const fullUrl = `${protocol}://${req.headers.host}${req.originalUrl}`;
+    if (!verifyWebhookSignature(fullUrl, req.body, twilioSig)) {
+      logWarn("Twilio SMS webhook signature verification failed");
+      return res.status(403).type("text/xml").send("<Response></Response>");
+    }
+  }
   try {
     await handleIncomingMessage("twilio", req.body);
     res.type("text/xml").send("<Response></Response>");
@@ -348,6 +381,16 @@ app.post(
   "/webhook/twilio-voice-demo",
   express.urlencoded({ extended: true }),
   async (req, res) => {
+    // Verify Twilio webhook signature
+    if (process.env.TWILIO_AUTH_TOKEN) {
+      const twilioSig = req.headers["x-twilio-signature"] || "";
+      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+      const fullUrl = `${protocol}://${req.headers.host}${req.originalUrl}`;
+      if (!verifyWebhookSignature(fullUrl, req.body, twilioSig)) {
+        logWarn("Twilio voice webhook signature verification failed");
+        return res.status(403).type("text/xml").send("<Response></Response>");
+      }
+    }
     try {
       await handleIncomingVoiceDemo(req.body);
     } catch (err) {
@@ -369,7 +412,7 @@ app.post(
 );
 
 // Auth routes
-app.post("/api/auth/signup", async (req, res) => {
+app.post("/api/auth/signup", authRateLimiter, async (req, res) => {
   const { email, password, name, phone } = req.body || {};
 
   if (!email || !password) {
@@ -426,7 +469,7 @@ app.post("/api/auth/signup", async (req, res) => {
   }
 });
 
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", authRateLimiter, async (req, res) => {
   const { email, password } = req.body || {};
 
   if (!email || !password) {
@@ -482,7 +525,7 @@ app.post("/api/auth/logout", async (req, res) => {
   res.status(204).end();
 });
 
-app.post("/api/auth/reset-password-request", async (req, res) => {
+app.post("/api/auth/reset-password-request", authRateLimiter, async (req, res) => {
   const { email } = req.body || {};
   if (!email || typeof email !== "string") {
     return res.status(400).json({ error: "Email is required" });
@@ -504,7 +547,7 @@ app.post("/api/auth/reset-password-request", async (req, res) => {
   }
 });
 
-app.post("/api/auth/reset-password", async (req, res) => {
+app.post("/api/auth/reset-password", authRateLimiter, async (req, res) => {
   const { token, password } = req.body || {};
   if (!token || !password) {
     return res.status(400).json({ error: "Token and password are required" });
@@ -1134,37 +1177,18 @@ app.post("/api/onboarding/send-payment-email", requireAuth, async (req, res) => 
   }
 });
 
-// Simple subscription status endpoint (soft access control)
-app.get("/api/subscription-status", express.json(), async (req, res) => {
-  const emailQuery = req.query.email;
-
+// Subscription status endpoint (requires authentication)
+app.get("/api/subscription-status", requireAuth, async (req, res) => {
   try {
-    let email =
-      typeof emailQuery === "string" && emailQuery.trim() ? emailQuery.trim() : null;
-    let customerId = null;
-
-    if (req.auth?.customerId) {
-      customerId = req.auth.customerId;
-      const snapshot = await getCustomerSubscriptionSnapshot(req.auth.customerId);
-      email = snapshot.customer?.email || email;
-      const hasActiveSubscription = Boolean(snapshot.subscription);
-      return res.json({
-        email,
-        customerId,
-        hasActiveSubscription,
-        subscription: snapshot.subscription,
-      });
-    }
-
-    if (!email) {
-      return res.status(400).json({ error: "Missing email" });
-    }
-
-    const subscription = await findActiveSubscriptionByEmail(email);
-    res.json({
+    const customerId = req.auth.customerId;
+    const snapshot = await getCustomerSubscriptionSnapshot(customerId);
+    const email = snapshot.customer?.email || null;
+    const hasActiveSubscription = Boolean(snapshot.subscription);
+    return res.json({
       email,
-      hasActiveSubscription: Boolean(subscription),
-      subscription,
+      customerId,
+      hasActiveSubscription,
+      subscription: snapshot.subscription,
     });
   } catch (err) {
     logError("Error checking subscription status", { error: err });

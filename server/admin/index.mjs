@@ -3,6 +3,8 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import Stripe from 'stripe';
 import Twilio from 'twilio';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { logInfo } from '../utils/logger.mjs';
 import { authMiddleware, requireAdmin, setSessionCookie, clearSessionCookie } from '../middleware/auth.mjs';
 import { errorHandler, asyncHandler, createUnauthorizedError } from '../middleware/errorHandler.mjs';
@@ -54,7 +56,28 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 app.use(cookieParser());
+app.use(helmet());
 app.use(express.json());
+
+// CSRF origin check: reject cross-origin state-changing requests
+app.use((req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  const origin = req.headers.origin;
+  if (!origin) return next();
+  if (allowedOrigins.includes(origin)) return next();
+  return res.status(403).json({ error: 'Forbidden' });
+});
+
+// Rate limiter for admin auth endpoints
+const adminAuthRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  skip: () => process.env.NODE_ENV === 'test',
+  message: { error: 'Too many login attempts, please try again later' },
+});
 
 // Attach req.auth using shared middleware
 app.use(authMiddleware);
@@ -63,6 +86,7 @@ app.use(authMiddleware);
 
 app.post(
   '/api/admin/auth/login',
+  adminAuthRateLimiter,
   asyncHandler(async (req, res) => {
     const { email, password } = req.body || {};
 

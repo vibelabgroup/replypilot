@@ -612,7 +612,7 @@ const generateDemoResponse = async (conversationId, leadMessage) => {
 
     // Get conversation history (last 5 messages)
     const historyResult = await query(
-      `SELECT sender, content, created_at
+      `SELECT sender, content, created_at, direction
        FROM messages
        WHERE conversation_id = $1
        ORDER BY created_at DESC
@@ -625,7 +625,23 @@ const generateDemoResponse = async (conversationId, leadMessage) => {
     // For the very first SMS after a demo call, always send a fixed text
     // instead of a model-generated response so the behavior matches
     // the marketing/demo promise exactly.
-    if (history.length === 0) {
+    // We check if there are ANY outbound messages in history, or if the
+    // last outbound message is older than 48 hours (session reset).
+    const outboundMessages = history.filter((m) => m.direction === 'outbound');
+    const lastOutbound = outboundMessages[outboundMessages.length - 1];
+
+    let shouldReset = false;
+    if (lastOutbound) {
+      const lastSentAt = new Date(lastOutbound.created_at);
+      const hoursSinceLastSms = (Date.now() - lastSentAt.getTime()) / (1000 * 60 * 60);
+      if (hoursSinceLastSms > 48) {
+        shouldReset = true;
+      }
+    } else {
+      shouldReset = true;
+    }
+
+    if (shouldReset) {
       const response =
         'Jeg er lige gået ind i et møde, hvornår kan jeg ringe tilbage?';
       return {
@@ -849,11 +865,11 @@ export const processAIGenerationJob = async (job) => {
     latestInboundMessageId,
   } = job;
 
-  // For non-demo flows, enforce stale-job and rate-limit checks,
+  // Enforce stale-job and rate-limit checks for both demo and regular jobs,
   // and bundle multiple inbound messages into a single user turn.
   let effectiveLeadMessage = leadMessage;
 
-  if (!demo && conversationId && customerId) {
+  if (conversationId && customerId) {
     const now = new Date();
 
     // Load conversation metadata once.

@@ -42,6 +42,9 @@ export const signTenantToken = async (customerId, ttlMs = 2 * 60 * 60 * 1000) =>
   if (!TENANT_TOKEN_SECRET) {
     throw new Error('TENANT_JWT_SECRET not configured');
   }
+  if (TENANT_TOKEN_SECRET.length < 32) {
+    throw new Error('TENANT_JWT_SECRET must be at least 32 characters');
+  }
   const now = Date.now();
   const payload = {
     customerId,
@@ -56,6 +59,9 @@ export const signTenantToken = async (customerId, ttlMs = 2 * 60 * 60 * 1000) =>
 export const verifyTenantToken = async (token) => {
   if (!TENANT_TOKEN_SECRET) {
     throw new Error('TENANT_JWT_SECRET not configured');
+  }
+  if (TENANT_TOKEN_SECRET.length < 32) {
+    throw new Error('TENANT_JWT_SECRET must be at least 32 characters');
   }
   return verify(token);
 };

@@ -7,7 +7,7 @@ import { createUnauthorizedError, createForbiddenError } from './errorHandler.mj
 const COOKIE_NAME = 'session';
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
+  secure: process.env.NODE_ENV !== 'development',
   sameSite: 'strict',
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
 };

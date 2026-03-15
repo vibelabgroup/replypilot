@@ -28,20 +28,44 @@ const logger = pino({
   timestamp: pino.stdTimeFunctions.isoTime,
 });
 
+// PII / secret field scrubber
+const SENSITIVE_KEYS = new Set([
+  'password', 'password_hash', 'passwordHash', 'newPassword', 'currentPassword',
+  'token', 'accessToken', 'access_token', 'refreshToken', 'refresh_token',
+  'sessionToken', 'resetToken', 'password_reset_token',
+  'apiKey', 'api_key', 'secret', 'authorization',
+  'credit_card', 'creditCard', 'ssn', 'cardNumber',
+]);
+
+function scrubMeta(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const cleaned = Array.isArray(obj) ? [] : {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (SENSITIVE_KEYS.has(key)) {
+      cleaned[key] = '[REDACTED]';
+    } else if (value && typeof value === 'object' && !(value instanceof Error)) {
+      cleaned[key] = scrubMeta(value);
+    } else {
+      cleaned[key] = value;
+    }
+  }
+  return cleaned;
+}
+
 export const logInfo = (message, meta = {}) => {
-  logger.info(meta, message);
+  logger.info(scrubMeta(meta), message);
 };
 
 export const logWarn = (message, meta = {}) => {
-  logger.warn(meta, message);
+  logger.warn(scrubMeta(meta), message);
 };
 
 export const logError = (message, meta = {}) => {
-  logger.error(meta, message);
+  logger.error(scrubMeta(meta), message);
 };
 
 export const logDebug = (message, meta = {}) => {
-  logger.debug(meta, message);
+  logger.debug(scrubMeta(meta), message);
 };
 
 export const childLogger = (bindings) => logger.child(bindings);

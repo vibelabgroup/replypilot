@@ -95,8 +95,8 @@ export const applyInboundMessage = async (
     leadId = leadResult.rows[0]?.id || null;
   }
 
-  // Store incoming message, tolerating duplicate inbound provider SIDs without relying on ON CONFLICT
   let messageId;
+  let messageIdWasExisting = false;
   if (providerMessageId) {
     const existing = await client.query(
       `SELECT id FROM messages
@@ -108,6 +108,7 @@ export const applyInboundMessage = async (
     );
     if (existing.rowCount > 0) {
       messageId = existing.rows[0].id;
+      messageIdWasExisting = true;
     }
   }
 
@@ -167,6 +168,7 @@ export const applyInboundMessage = async (
     success: true,
     conversationId,
     messageId,
+    isNewMessage: !messageIdWasExisting,
   };
 };
 

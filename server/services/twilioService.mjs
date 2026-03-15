@@ -320,6 +320,21 @@ export const handleIncomingVoiceDemo = async (payload) => {
       { disableAutoResponse: true }
     );
 
+    // Generate a simple, monotonic-ish job id for deduplication.
+    const aiJobId = BigInt(Date.now()).toString();
+
+    // Persist scheduling metadata on the conversation.
+    await client.query(
+      `
+        UPDATE conversations
+        SET
+          pending_ai_job_id = $1,
+          updated_at = NOW()
+        WHERE id = $2
+      `,
+      [aiJobId, result.conversationId]
+    );
+
     // Queue a demo-specific AI job that uses global admin AI configuration.
     // The demo AI generator will load recent conversation history so repeat calls
     // get appropriate context in the SMS.
@@ -329,6 +344,7 @@ export const handleIncomingVoiceDemo = async (payload) => {
       customerId,
       conversationId: result.conversationId,
       leadMessage: syntheticBody,
+      aiJobId,
       delayMs: 0,
       scheduledFor: Date.now(),
     });

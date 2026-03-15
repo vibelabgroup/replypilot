@@ -232,29 +232,28 @@ export const requestPasswordReset = async (email) => {
 
   const userId = userResult.rows[0].id;
   const token = generateResetToken();
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
   await query(
     `UPDATE users 
      SET password_reset_token = $1, password_reset_expires = $2
      WHERE id = $3`,
-    [token, expiresAt, userId]
+    [tokenHash, expiresAt, userId]
   );
 
   logInfo('Password reset requested', { userId, email });
 
-  // In production, send email with reset link
-  // sendEmail(email, 'Password Reset', `Click here to reset: ${process.env.FRONTEND_URL}/reset-password?token=${token}`);
-
-  return { success: true, token }; // Return token for development, remove in production
+  return { success: true, token };
 };
 
 // Reset password with token
 export const resetPassword = async (token, newPassword) => {
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const userResult = await query(
     `SELECT id, password_reset_expires FROM users 
      WHERE password_reset_token = $1`,
-    [token]
+    [tokenHash]
   );
 
   if (userResult.rowCount === 0) {
