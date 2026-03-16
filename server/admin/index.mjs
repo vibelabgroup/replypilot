@@ -1491,6 +1491,284 @@ app.put(
   })
 );
 
+// ---------- Email Management (Admin) ----------
+
+// List all email accounts (optionally filter by customer)
+app.get(
+  '/api/admin/email/accounts',
+  authMiddleware,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const customerId = req.query.customerId || null;
+    const conditions = [];
+    const params = [];
+    let idx = 1;
+
+    if (customerId) {
+      conditions.push(`ea.customer_id = $${idx++}`);
+      params.push(customerId);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const result = await query(
+      `
+        SELECT
+          ea.id,
+          ea.customer_id,
+          c.name AS customer_name,
+          ea.provider,
+          ea.email_address,
+          ea.display_name,
+          ea.status,
+          ea.sync_error,
+          ea.sync_error_count,
+          ea.last_sync_at,
+          ea.next_sync_at,
+          ea.created_at
+        FROM email_accounts ea
+        LEFT JOIN customers c ON c.id = ea.customer_id
+        ${where}
+        ORDER BY ea.created_at DESC
+        LIMIT 100
+      `,
+      params
+    );
+
+    res.json({ data: result.rows });
+  })
+);
+
+// Get email account detail
+app.get(
+  '/api/admin/email/accounts/:id',
+  authMiddleware,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await query(
+      `
+        SELECT ea.*, c.name AS customer_name
+        FROM email_accounts ea
+        LEFT JOIN customers c ON c.id = ea.customer_id
+        WHERE ea.id = $1
+        LIMIT 1
+      `,
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Email account not found' });
+    }
+
+    // Mask tokens for security
+    const account = result.rows[0];
+    account.access_token = account.access_token ? '***' : null;
+    account.refresh_token = account.refresh_token ? '***' : null;
+
+    res.json({ data: account });
+  })
+);
+
+// Disable / re-enable an email account
+app.patch(
+  '/api/admin/email/accounts/:id',
+  authMiddleware,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status || !['active', 'disabled', 'error'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status. Must be active, disabled, or error.' });
+    }
+
+    const updates = { status };
+    if (status === 'active') {
+      // Clear error state when re-enabling
+      updates.sync_error = null;
+      updates.sync_error_count = 0;
+    }
+
+    const result = await query(
+      `
+        UPDATE email_accounts
+        SET status = $1,
+            sync_error = $2,
+            sync_error_count = $3,
+            updated_at = NOW()
+        WHERE id = $4
+        RETURNING id, status
+      `,
+      [
+        updates.status,
+        updates.sync_error !== undefined ? updates.sync_error : null,
+        updates.sync_error_count !== undefined ? updates.sync_error_count : 0,
+        id,
+      ]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Email account not found' });
+    }
+
+    res.json({ data: result.rows[0] });
+  })
+);
+
+// Delete an email account permanently
+app.delete(
+  '/api/admin/email/accounts/:id',
+  authMiddleware,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const result = await query(
+      `DELETE FROM email_accounts WHERE id = $1 RETURNING id`,
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Email account not found' });
+    }
+
+    res.status(204).end();
+  })
+);
+
+// List email conversations across all customers (admin overview)
+app.get(
+  '/api/admin/email/conversations',
+  authMiddleware,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const customerId = req.query.customerId || null;
+    const status = req.query.status || null;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    const offset = parseInt(req.query.offset, 10) || 0;
+
+    const conditions = ["c.channel = 'email'"];
+    const params = [];
+    let idx = 1;
+
+    if (customerId) {
+      conditions.push(`c.customer_id = $${idx++}`);
+      params.push(customerId);
+    }
+    if (status) {
+      conditions.push(`c.status = $${idx++}`);
+      params.push(status);
+    }
+
+    params.push(limit, offset);
+
+    const result = await query(
+      `
+        SELECT
+          c.id,
+          c.customer_id,
+          cu.name AS customer_name,
+          c.email_subject,
+          c.lead_name,
+          c.lead_email,
+          c.status,
+          c.message_count,
+          c.ai_response_count,
+          c.last_message_at,
+          c.created_at,
+          ea.email_address AS account_email
+        FROM conversations c
+        LEFT JOIN customers cu ON cu.id = c.customer_id
+        LEFT JOIN email_accounts ea ON ea.id = c.email_account_id
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY c.last_message_at DESC NULLS LAST
+        LIMIT $${idx++} OFFSET $${idx++}
+      `,
+      params
+    );
+
+    res.json({ data: result.rows });
+  })
+);
+
+// List email drafts across all customers (admin overview)
+app.get(
+  '/api/admin/email/drafts',
+  authMiddleware,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const customerId = req.query.customerId || null;
+    const status = req.query.status || null;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    const offset = parseInt(req.query.offset, 10) || 0;
+
+    const conditions = [];
+    const params = [];
+    let idx = 1;
+
+    if (customerId) {
+      conditions.push(`d.customer_id = $${idx++}`);
+      params.push(customerId);
+    }
+    if (status) {
+      conditions.push(`d.status = $${idx++}`);
+      params.push(status);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    params.push(limit, offset);
+
+    const result = await query(
+      `
+        SELECT
+          d.id,
+          d.customer_id,
+          cu.name AS customer_name,
+          d.subject,
+          d.to_addresses,
+          d.status,
+          d.ai_model,
+          d.sent_at,
+          d.created_at,
+          ea.email_address AS account_email
+        FROM email_drafts d
+        LEFT JOIN customers cu ON cu.id = d.customer_id
+        LEFT JOIN email_accounts ea ON ea.id = d.email_account_id
+        ${where}
+        ORDER BY d.created_at DESC
+        LIMIT $${idx++} OFFSET $${idx++}
+      `,
+      params
+    );
+
+    res.json({ data: result.rows });
+  })
+);
+
+// Email system stats (admin dashboard)
+app.get(
+  '/api/admin/email/stats',
+  authMiddleware,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const result = await query(
+      `
+        SELECT
+          (SELECT COUNT(*) FROM email_accounts WHERE status = 'active') AS active_accounts,
+          (SELECT COUNT(*) FROM email_accounts WHERE status = 'error') AS error_accounts,
+          (SELECT COUNT(*) FROM conversations WHERE channel = 'email' AND status = 'active') AS open_conversations,
+          (SELECT COUNT(*) FROM email_drafts WHERE status = 'draft') AS pending_drafts,
+          (SELECT COUNT(*) FROM email_drafts WHERE status = 'sent') AS sent_drafts,
+          (SELECT COUNT(*) FROM email_messages WHERE created_at > NOW() - INTERVAL '24 hours') AS messages_24h
+      `,
+      []
+    );
+
+    res.json({ data: result.rows[0] });
+  })
+);
+
 // 404 handler for admin routes
 app.use('/api/admin', (req, res) => {
   res.status(404).json({ error: 'Admin route not found' });

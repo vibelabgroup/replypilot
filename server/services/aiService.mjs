@@ -1006,13 +1006,15 @@ export const processAIGenerationJob = async (job) => {
     [conversationId, aiJobId ? String(aiJobId) : null]
   );
 
-  // Queue SMS send
+  // Queue outbound delivery based on conversation channel
   const conversation = await query(
-    `SELECT lead_phone FROM conversations WHERE id = $1`,
+    `SELECT lead_phone, channel FROM conversations WHERE id = $1`,
     [conversationId]
   );
 
-  if (conversation.rowCount > 0) {
+  const convChannel = conversation.rows[0]?.channel || 'sms';
+
+  if (convChannel === 'sms' && conversation.rowCount > 0 && conversation.rows[0].lead_phone) {
     const { queueSms } = await import('../sms/gateway.mjs');
     await queueSms({
       customerId,
@@ -1024,6 +1026,8 @@ export const processAIGenerationJob = async (job) => {
       },
     });
   }
+  // For email channel, the draft is already created by emailDraftService;
+  // processAIGenerationJob is only invoked for SMS-originated conversations.
 
   try {
     const leadResult = await query(

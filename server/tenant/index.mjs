@@ -353,6 +353,253 @@ app.delete('/api/tenant/email/accounts/:id', async (req, res) => {
   }
 });
 
+// ---------- Email Conversations ----------
+
+app.get('/api/tenant/email/conversations', async (req, res) => {
+  try {
+    await tenantAuth(req, res, async () => {
+      const { customerId } = req.tenant;
+      const status = req.query.status || null;
+      const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
+      const offset = parseInt(req.query.offset, 10) || 0;
+
+      const conditions = ['c.customer_id = $1', "c.channel = 'email'"];
+      const params = [customerId];
+      let idx = 2;
+
+      if (status) {
+        conditions.push(`c.status = $${idx++}`);
+        params.push(status);
+      }
+
+      params.push(limit, offset);
+
+      const result = await query(
+        `
+          SELECT
+            c.id,
+            c.email_subject,
+            c.lead_name,
+            c.lead_email,
+            c.status,
+            c.message_count,
+            c.ai_response_count,
+            c.last_message_at,
+            c.created_at,
+            ea.email_address AS account_email,
+            ea.display_name AS account_name
+          FROM conversations c
+          LEFT JOIN email_accounts ea ON ea.id = c.email_account_id
+          WHERE ${conditions.join(' AND ')}
+          ORDER BY c.last_message_at DESC NULLS LAST
+          LIMIT $${idx++} OFFSET $${idx++}
+        `,
+        params
+      );
+
+      res.json({ data: result.rows });
+    });
+  } catch (err) {
+    logError('Failed to list email conversations', { error: err?.message });
+    res.status(500).json({ error: 'Unable to list email conversations' });
+  }
+});
+
+app.get('/api/tenant/email/conversations/:id/messages', async (req, res) => {
+  try {
+    await tenantAuth(req, res, async () => {
+      const { customerId } = req.tenant;
+      const { id: conversationId } = req.params;
+
+      // Verify conversation belongs to this customer
+      const convCheck = await query(
+        `SELECT id FROM conversations WHERE id = $1 AND customer_id = $2 LIMIT 1`,
+        [conversationId, customerId]
+      );
+      if (convCheck.rowCount === 0) {
+        return res.status(404).json({ error: 'Conversation not found' });
+      }
+
+      const result = await query(
+        `
+          SELECT
+            m.id,
+            m.direction,
+            m.sender,
+            m.content,
+            m.channel,
+            m.created_at,
+            em.from_address,
+            em.to_addresses,
+            em.subject,
+            em.snippet
+          FROM messages m
+          LEFT JOIN email_messages em ON em.id = m.email_message_id
+          WHERE m.conversation_id = $1
+          ORDER BY m.created_at ASC
+        `,
+        [conversationId]
+      );
+
+      res.json({ data: result.rows });
+    });
+  } catch (err) {
+    logError('Failed to list conversation messages', { error: err?.message });
+    res.status(500).json({ error: 'Unable to list messages' });
+  }
+});
+
+// ---------- Email Drafts ----------
+
+app.get('/api/tenant/email/drafts', async (req, res) => {
+  try {
+    await tenantAuth(req, res, async () => {
+      const { customerId } = req.tenant;
+      const { listDrafts } = await import('../services/emailDraftService.mjs');
+
+      const drafts = await listDrafts(customerId, {
+        status: req.query.status || undefined,
+        conversationId: req.query.conversationId || undefined,
+        limit: Math.min(parseInt(req.query.limit, 10) || 50, 100),
+        offset: parseInt(req.query.offset, 10) || 0,
+      });
+
+      res.json({ data: drafts });
+    });
+  } catch (err) {
+    logError('Failed to list email drafts', { error: err?.message });
+    res.status(500).json({ error: 'Unable to list email drafts' });
+  }
+});
+
+app.get('/api/tenant/email/drafts/:id', async (req, res) => {
+  try {
+    await tenantAuth(req, res, async () => {
+      const { customerId } = req.tenant;
+      const { id: draftId } = req.params;
+
+      const result = await query(
+        `
+          SELECT
+            d.*,
+            ea.email_address AS account_email,
+            ea.display_name AS account_name,
+            em.from_address AS original_from,
+            em.subject AS original_subject,
+            em.body_plain AS original_body,
+            em.snippet AS original_snippet
+          FROM email_drafts d
+          LEFT JOIN email_accounts ea ON ea.id = d.email_account_id
+          LEFT JOIN email_messages em ON em.id = d.email_message_id
+          WHERE d.id = $1 AND d.customer_id = $2
+          LIMIT 1
+        `,
+        [draftId, customerId]
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({ error: 'Draft not found' });
+      }
+
+      res.json({ data: result.rows[0] });
+    });
+  } catch (err) {
+    logError('Failed to get email draft', { error: err?.message });
+    res.status(500).json({ error: 'Unable to get email draft' });
+  }
+});
+
+app.patch('/api/tenant/email/drafts/:id', async (req, res) => {
+  try {
+    await tenantAuth(req, res, async () => {
+      const { customerId } = req.tenant;
+      const { id: draftId } = req.params;
+      const { bodyPlain, bodyHtml, status } = req.body;
+      const { updateDraft } = await import('../services/emailDraftService.mjs');
+
+      if (status && !['draft', 'approved', 'discarded'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status' });
+      }
+
+      const updated = await updateDraft(customerId, draftId, {
+        bodyPlain,
+        bodyHtml,
+        status,
+        reviewedBy: req.tenant.userId || null,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ error: 'Draft not found or already processed' });
+      }
+
+      res.json({ data: updated });
+    });
+  } catch (err) {
+    logError('Failed to update email draft', { error: err?.message });
+    res.status(500).json({ error: 'Unable to update email draft' });
+  }
+});
+
+app.post('/api/tenant/email/drafts/:id/send', async (req, res) => {
+  try {
+    await tenantAuth(req, res, async () => {
+      const { customerId } = req.tenant;
+      const { id: draftId } = req.params;
+      const { sendDraft } = await import('../services/emailSendService.mjs');
+
+      const result = await sendDraft(draftId, customerId);
+      res.json({ data: result });
+    });
+  } catch (err) {
+    logError('Failed to send email draft', { error: err?.message });
+    res.status(500).json({ error: err?.message || 'Unable to send email draft' });
+  }
+});
+
+app.post('/api/tenant/email/drafts/:id/push', async (req, res) => {
+  try {
+    await tenantAuth(req, res, async () => {
+      const { customerId } = req.tenant;
+      const { id: draftId } = req.params;
+      const { pushDraftToProvider } = await import('../services/emailSendService.mjs');
+
+      const result = await pushDraftToProvider(draftId, customerId);
+      res.json({ data: result });
+    });
+  } catch (err) {
+    logError('Failed to push email draft to provider', { error: err?.message });
+    res.status(500).json({ error: err?.message || 'Unable to push draft' });
+  }
+});
+
+// ---------- Email Stats (quick summary) ----------
+
+app.get('/api/tenant/email/stats', async (req, res) => {
+  try {
+    await tenantAuth(req, res, async () => {
+      const { customerId } = req.tenant;
+
+      const result = await query(
+        `
+          SELECT
+            (SELECT COUNT(*) FROM email_accounts WHERE customer_id = $1 AND status = 'active') AS active_accounts,
+            (SELECT COUNT(*) FROM conversations WHERE customer_id = $1 AND channel = 'email' AND status = 'active') AS open_conversations,
+            (SELECT COUNT(*) FROM email_drafts WHERE customer_id = $1 AND status = 'draft') AS pending_drafts,
+            (SELECT COUNT(*) FROM email_drafts WHERE customer_id = $1 AND status = 'sent') AS sent_drafts
+        `,
+        [customerId]
+      );
+
+      res.json({ data: result.rows[0] });
+    });
+  } catch (err) {
+    logError('Failed to get email stats', { error: err?.message });
+    res.status(500).json({ error: 'Unable to get email stats' });
+  }
+});
+
+// ---------- Shopify OAuth ----------
+
 app.get('/api/tenant/shops/shopify/connect', async (req, res) => {
   try {
     // tenantAuth is not used here because Shopify will call back to /callback.
