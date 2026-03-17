@@ -52,31 +52,47 @@ export const refreshAccessToken = async (emailAccount) => {
     body.set('client_id', config.clientId);
     body.set('client_secret', config.clientSecret);
 
-    const res = await fetch(config.tokenUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+    
+    try {
+      const res = await fetch(config.tokenUrl, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
+      clearTimeout(timeoutId);
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      logError('Token refresh failed', { provider, status: res.status, body: text, emailAccountId: id });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        logError('Token refresh failed', { provider, status: res.status, body: text, emailAccountId: id });
 
-      // If 400/401, mark the account as needing re-auth
-      if (res.status === 400 || res.status === 401) {
-        await markAccountError(id, `Token refresh rejected (${res.status}): re-authentication required`);
+        // If 400/401, mark the account as needing re-auth
+        if (res.status === 400 || res.status === 401) {
+          await markAccountError(id, `Token refresh rejected (${res.status}): re-authentication required`);
+        }
+        return null;
       }
-      return null;
-    }
 
-    const json = await res.json();
-    const accessToken = json.access_token;
-    const newRefreshToken = json.refresh_token || refreshToken; // some providers rotate
-    const expiresIn = json.expires_in;
+      const json = await res.json();
+      const accessToken = json.access_token;
+      const newRefreshToken = json.refresh_token || refreshToken; // some providers rotate
+      const expiresIn = json.expires_in;
 
-    if (!accessToken) {
-      logError('Token refresh returned no access_token', { provider, emailAccountId: id });
-      return null;
+      if (!accessToken) {
+        logError('Token refresh returned no access_token', { provider, emailAccountId: id });
+        return null;
+      }
+
+      return { accessToken, refreshToken: newRefreshToken, expiresIn };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        logError('Token refresh timeout', { provider, emailAccountId: id });
+        return null;
+      }
+      throw error;
     }
 
     const expiresAt =

@@ -2,6 +2,7 @@ import { query, withTransaction } from '../utils/db.mjs';
 import { logInfo, logError, logDebug } from '../utils/logger.mjs';
 import { enqueueJob } from '../utils/redis.mjs';
 import { ensureValidToken, scheduleNextSync } from './emailTokenService.mjs';
+import { emailClient } from '../core/httpClient.mjs';
 
 // ---------------------------------------------------------------------------
 // Gmail helpers
@@ -11,7 +12,8 @@ const GMAIL_BASE = 'https://www.googleapis.com/gmail/v1/users/me';
 
 const gmailFetch = async (accessToken, path, opts = {}) => {
   const url = path.startsWith('http') ? path : `${GMAIL_BASE}${path}`;
-  const res = await fetch(url, {
+  
+  const res = await emailClient.fetch(url, {
     ...opts,
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -19,6 +21,7 @@ const gmailFetch = async (accessToken, path, opts = {}) => {
       ...(opts.headers || {}),
     },
   });
+  
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`Gmail API ${res.status}: ${text}`);
@@ -171,7 +174,8 @@ const GRAPH_BASE = 'https://graph.microsoft.com/v1.0/me';
 
 const graphFetch = async (accessToken, path, opts = {}) => {
   const url = path.startsWith('http') ? path : `${GRAPH_BASE}${path}`;
-  const res = await fetch(url, {
+  
+  const res = await emailClient.fetch(url, {
     ...opts,
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -179,6 +183,7 @@ const graphFetch = async (accessToken, path, opts = {}) => {
       ...(opts.headers || {}),
     },
   });
+  
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`Graph API ${res.status}: ${text}`);

@@ -16,7 +16,10 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+
+// Request size limits to prevent DoS attacks
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // ---------- Email OAuth (Gmail & Outlook) ----------
 
@@ -146,51 +149,92 @@ const exchangeCodeForTokens = async ({ provider, code, config }) => {
   body.set('client_id', config.clientId);
   body.set('client_secret', config.clientSecret);
 
-  const res = await fetch(config.tokenUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+  
+  try {
+    const res = await fetch(config.tokenUrl, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    clearTimeout(timeoutId);
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Token exchange failed (${provider}): ${res.status} ${text}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Token exchange failed (${provider}): ${res.status} ${text}`);
+    }
+
+    return res.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error(`Token exchange timeout (${provider})`);
+    }
+    throw error;
   }
-
-  return res.json();
 };
 
 const fetchProviderProfile = async ({ provider, accessToken }) => {
   if (provider === 'gmail') {
-    const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Failed to fetch Gmail profile: ${res.status} ${text}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+    
+    try {
+      const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      clearTimeout(timeoutId);
+      
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`Failed to fetch Gmail profile: ${res.status} ${text}`);
+      }
+      const json = await res.json();
+      return {
+        email: json.email,
+        displayName: json.name || null,
+        providerUserId: json.id || null,
+      };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Gmail profile fetch timeout (30s)');
+      }
+      throw error;
     }
-    const json = await res.json();
-    return {
-      email: json.email,
-      displayName: json.name || null,
-      providerUserId: json.id || null,
-    };
   }
 
   if (provider === 'outlook') {
-    const res = await fetch('https://graph.microsoft.com/v1.0/me', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Failed to fetch Microsoft profile: ${res.status} ${text}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+    
+    try {
+      const res = await fetch('https://graph.microsoft.com/v1.0/me', {
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      clearTimeout(timeoutId);
+      
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`Failed to fetch Microsoft profile: ${res.status} ${text}`);
+      }
+      const json = await res.json();
+      return {
+        email: json.mail || json.userPrincipalName,
+        displayName: json.displayName || null,
+        providerUserId: json.id || null,
+      };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Microsoft profile fetch timeout (30s)');
+      }
+      throw error;
     }
-    const json = await res.json();
-    return {
-      email: (json.mail || json.userPrincipalName || '').toLowerCase(),
-      displayName: json.displayName || null,
-      providerUserId: json.id || null,
-    };
   }
 
   throw new Error('Unsupported provider');

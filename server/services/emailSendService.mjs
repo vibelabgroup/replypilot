@@ -1,6 +1,8 @@
 import { query } from '../utils/db.mjs';
-import { logInfo, logError, logDebug } from '../utils/logger.mjs';
+import { logInfo, logError, logWarn } from '../utils/logger.mjs';
+import { enqueueJob } from '../utils/redis.mjs';
 import { ensureValidToken } from './emailTokenService.mjs';
+import { emailClient } from '../core/httpClient.mjs';
 
 // ---------------------------------------------------------------------------
 // Gmail send helpers
@@ -57,7 +59,7 @@ const sendViaGmail = async (accessToken, { from, to, cc, subject, bodyPlain, bod
   const payload = { raw };
   if (threadId) payload.threadId = threadId;
 
-  const res = await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send', {
+  const res = await emailClient.fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -84,7 +86,7 @@ const createGmailDraft = async (accessToken, { from, to, cc, subject, bodyPlain,
   const message = { raw };
   if (threadId) message.threadId = threadId;
 
-  const res = await fetch('https://www.googleapis.com/gmail/v1/users/me/drafts', {
+  const res = await emailClient.fetch('https://www.googleapis.com/gmail/v1/users/me/drafts', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -137,7 +139,7 @@ const sendViaOutlook = async (accessToken, { to, cc, subject, bodyPlain, bodyHtm
     ];
   }
 
-  const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+  const res = await emailClient.fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -179,7 +181,7 @@ const createOutlookDraft = async (accessToken, { to, cc, subject, bodyPlain, bod
 
   if (ccRecipients.length > 0) draft.ccRecipients = ccRecipients;
 
-  const res = await fetch('https://graph.microsoft.com/v1.0/me/messages', {
+  const res = await emailClient.fetch('https://graph.microsoft.com/v1.0/me/messages', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,

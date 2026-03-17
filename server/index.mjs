@@ -80,6 +80,10 @@ app.use(
 app.use(cookieParser());
 app.use(helmet());
 
+// Request size limits to prevent DoS attacks
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
 // CSRF origin check: reject cross-origin state-changing requests
 app.use((req, res, next) => {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
@@ -552,8 +556,8 @@ app.post("/api/auth/reset-password", authRateLimiter, async (req, res) => {
   if (!token || !password) {
     return res.status(400).json({ error: "Token and password are required" });
   }
-  if (typeof password !== "string" || password.length < 6) {
-    return res.status(400).json({ error: "Password must be at least 6 characters" });
+  if (typeof password !== "string" || password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
   }
 
   try {
