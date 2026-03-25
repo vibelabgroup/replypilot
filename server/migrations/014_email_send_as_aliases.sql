@@ -3,8 +3,8 @@
 
 -- Table to store discovered send-as aliases for each email account
 CREATE TABLE IF NOT EXISTS email_send_as_aliases (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email_account_id UUID NOT NULL REFERENCES email_accounts(id) ON DELETE CASCADE,
+    id SERIAL PRIMARY KEY,
+    email_account_id INTEGER NOT NULL REFERENCES email_accounts(id) ON DELETE CASCADE,
     send_as_email TEXT NOT NULL,
     display_name TEXT,
     reply_to_address TEXT,
@@ -45,7 +45,7 @@ ALTER TABLE store_connections
 -- Add email routing columns to email_messages for outbound tracking
 ALTER TABLE email_messages 
     ADD COLUMN IF NOT EXISTS actual_from_address TEXT, -- The actual From: header used
-    ADD COLUMN IF NOT EXISTS send_as_alias_id UUID REFERENCES email_send_as_aliases(id) ON DELETE SET NULL;
+    ADD COLUMN IF NOT EXISTS send_as_alias_id INTEGER REFERENCES email_send_as_aliases(id) ON DELETE SET NULL;
 
 -- Trigger to keep updated_at current
 DO $$

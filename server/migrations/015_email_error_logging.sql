@@ -2,10 +2,10 @@
 -- Add email error logging for monitoring and debugging
 
 CREATE TABLE IF NOT EXISTS email_error_log (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id SERIAL PRIMARY KEY,
     customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
-    email_account_id UUID REFERENCES email_accounts(id) ON DELETE CASCADE,
-    store_connection_id UUID REFERENCES store_connections(id) ON DELETE SET NULL,
+    email_account_id INTEGER REFERENCES email_accounts(id) ON DELETE CASCADE,
+    store_connection_id INTEGER REFERENCES store_connections(id) ON DELETE SET NULL,
     to_address TEXT NOT NULL,
     subject TEXT,
     error_type TEXT NOT NULL,
