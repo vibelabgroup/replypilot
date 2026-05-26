@@ -21,9 +21,10 @@ jobs:
           script: |
             rm -rf /root/estatify
             mkdir -p /root/estatify
+            git clone https://${{ secrets.GH_TOKEN }}@github.com/vibelabgroup/replypilot.git /root/estatify
             cd /root/estatify
-            git clone https://${{ secrets.GH_TOKEN }}@github.com/vibelabgroup/replypilot.git .
             ls -la
+            pwd
             docker network create traefik-proxy 2>/dev/null || true
             docker compose down
             docker compose up -d --build
