@@ -5,8 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 
 // Import existing components and types
-import { useAdminAuth } from '../hooks/useAdminAuth';
-import { LoadingSpinner } from '../ui/LoadingSpinner';
+import { useAdminAuth } from '../state/useAdminAuth';
 import { EmailAccountSection } from '../components/EmailAccountSection';
 
 // Types (existing from original file)
@@ -93,7 +92,7 @@ export const CustomerDetailPage: React.FC = () => {
   if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <LoadingSpinner />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
       </div>
     );
   }
