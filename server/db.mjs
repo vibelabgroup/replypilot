@@ -189,14 +189,6 @@ export async function initDb() {
   `);
 
   await pool.query(`
-    DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'conversations' AND column_name = 'fonecloud_number_id') THEN
-        ALTER TABLE conversations ADD COLUMN fonecloud_number_id INTEGER REFERENCES fonecloud_numbers(id) ON DELETE SET NULL;
-      END IF;
-    END $$;
-  `);
-
-  await pool.query(`
     CREATE TABLE IF NOT EXISTS conversations (
       id SERIAL PRIMARY KEY,
       customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -213,6 +205,14 @@ export async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await pool.query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'conversations' AND column_name = 'fonecloud_number_id') THEN
+        ALTER TABLE conversations ADD COLUMN fonecloud_number_id INTEGER REFERENCES fonecloud_numbers(id) ON DELETE SET NULL;
+      END IF;
+    END $$;
   `);
 
   await pool.query(`
