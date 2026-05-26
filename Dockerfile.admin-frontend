@@ -2,15 +2,15 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy admin package.json and install dependencies
-COPY admin/package.json admin/
-RUN cd admin && npm install
+# Copy root package.json and install dependencies
+COPY package*.json ./
+RUN npm install
 
-# Copy admin source files
-COPY admin/ admin/
+# Copy all source files
+COPY . .
 
-# Build the admin frontend
-RUN cd admin && npm run build
+# Build the admin frontend from root
+RUN npm run admin:build
 
 FROM nginx:alpine
 
