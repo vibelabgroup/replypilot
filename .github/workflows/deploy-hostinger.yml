@@ -1,0 +1,27 @@
+name: Deploy to Hostinger VPS
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Hostinger VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOSTINGER_VPS_IP }}
+          username: root
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          script: |
+            cd /root/estatify || mkdir -p /root/estatify
+            cd /root/estatify
+            git pull origin main || git clone https://${{ secrets.GH_TOKEN }}@github.com/vibelabgroup/Estatify.git .
+            docker compose down
+            docker compose up -d --build
+            docker system prune -f
