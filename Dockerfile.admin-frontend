@@ -2,13 +2,15 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install
+# Copy admin package.json and install dependencies
+COPY admin/package.json admin/
+RUN cd admin && npm install
 
-COPY . .
+# Copy admin source files
+COPY admin/ admin/
 
-# Build the admin frontend via the root script, which runs Vite in /admin
-RUN npm run admin:build
+# Build the admin frontend
+RUN cd admin && npm run build
 
 FROM nginx:alpine
 
