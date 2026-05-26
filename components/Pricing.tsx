@@ -63,7 +63,7 @@ export const Pricing: React.FC<PricingProps> = ({ onStart }) => {
                             <div className="mb-10 pt-4">
                                 <div className="flex justify-between items-start mb-6">
                                     <span className="inline-block py-1 px-3 rounded-full bg-slate-100 text-xs font-bold text-slate-900 uppercase tracking-widest">
-                                        Tilbud gælder t.o.m 1/3/2026
+                                        Tilbud gælder t.o.m 1/7/2026
                                     </span>
                                     <div className="bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full">Spar 50%</div>
                                 </div>

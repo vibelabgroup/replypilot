@@ -29,7 +29,6 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onAuthenticated }
         setIsLoading(true);
         try {
             trackEvent('signup_started');
-            setIsSuccess(true);
 
             const apiBase = window.location.origin.replace(/\/$/, "");
 
@@ -53,6 +52,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, onAuthenticated }
             }
 
             trackEvent('signup_completed');
+            setIsSuccess(true);
             onAuthenticated();
 
         } catch (error) {
