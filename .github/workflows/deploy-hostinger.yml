@@ -22,6 +22,7 @@ jobs:
             cd /root/estatify || mkdir -p /root/estatify
             cd /root/estatify
             git pull origin main || git clone https://${{ secrets.GH_TOKEN }}@github.com/vibelabgroup/replypilot.git .
+            ls -la
             docker network create traefik-proxy 2>/dev/null || true
             docker compose down
             docker compose up -d --build
