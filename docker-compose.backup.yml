@@ -1,34 +1,7 @@
-version: '3.8'
-
 services:
-  # Traefik Reverse Proxy (create if not exists)
-  traefik:
-    image: traefik:v3.0
-    container_name: traefik
-    command:
-      - "--api.insecure=true"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
-      - "--certificatesresolvers.letsencrypt.acme.email=${LETSENCRYPT_EMAIL:-admin@example.com}"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
-    ports:
-      - "80:80"
-      - "443:443"
-      - "8080:8080"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik-letsencrypt:/letsencrypt
-    networks:
-      - traefik-proxy
-    restart: unless-stopped
-
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: replypilot-postgres
     environment:
       POSTGRES_USER: replypilot
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
@@ -43,12 +16,10 @@ services:
       retries: 5
     networks:
       - replypilot-network
-    restart: unless-stopped
 
   # Redis Cache & Queue
   redis:
     image: redis:7-alpine
-    container_name: replypilot-redis
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme}
     volumes:
       - redis_data:/data
@@ -59,14 +30,12 @@ services:
       retries: 5
     networks:
       - replypilot-network
-    restart: unless-stopped
 
-  # Backend API
+  # Backend API (Traefik routes here: single service for replypilot.dk)
   api:
     build:
       context: ./server
       dockerfile: Dockerfile
-    container_name: replypilot-api
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 3000
@@ -113,6 +82,8 @@ services:
       - replypilot-network
       - traefik-proxy
     restart: unless-stopped
+    deploy:
+      replicas: 2
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.replypilot.rule=Host(`replypilot.dk`)"
@@ -120,12 +91,11 @@ services:
       - "traefik.http.routers.replypilot.tls.certresolver=letsencrypt"
       - "traefik.http.services.replypilot.loadbalancer.server.port=3000"
 
-  # Admin Backend API
+  # Admin Backend API (separate service and subdomain)
   admin-api:
     build:
       context: ./server
       dockerfile: Dockerfile.admin
-    container_name: replypilot-admin-api
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       ADMIN_API_PORT: 3100
@@ -151,6 +121,8 @@ services:
       - replypilot-network
       - traefik-proxy
     restart: unless-stopped
+    ports:
+      - "3100:3100"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.replypilot-admin-api.rule=Host(`admin-api.replypilot.dk`)"
@@ -163,7 +135,6 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile.worker
-    container_name: replypilot-worker-sms
     command: npm run worker:sms
     environment:
       NODE_ENV: ${NODE_ENV:-production}
@@ -182,12 +153,13 @@ services:
     networks:
       - replypilot-network
     restart: unless-stopped
+    deploy:
+      replicas: 3
 
   worker-ai:
     build:
       context: ./server
       dockerfile: Dockerfile.worker
-    container_name: replypilot-worker-ai
     command: npm run worker:ai
     environment:
       NODE_ENV: ${NODE_ENV:-production}
@@ -206,12 +178,13 @@ services:
     networks:
       - replypilot-network
     restart: unless-stopped
+    deploy:
+      replicas: 1
 
   worker-notifications:
     build:
       context: ./server
       dockerfile: Dockerfile.worker
-    container_name: replypilot-worker-notifications
     command: npm run worker:notifications
     environment:
       NODE_ENV: ${NODE_ENV:-production}
@@ -227,27 +200,27 @@ services:
     networks:
       - replypilot-network
     restart: unless-stopped
+    deploy:
+      replicas: 2
 
-  # Frontend Build
+  # Frontend Build (static files; output in frontend_dist, consumed by api)
   frontend-build:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: replypilot-frontend-build
     volumes:
       - frontend_dist:/app/dist
     environment:
+      # Default to same-origin API (replypilot.dk) – override if you later run
+      # a separate API subdomain behind nginx.
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://replypilot.dk}
     command: npm run build
-    networks:
-      - replypilot-network
 
-  # Admin Frontend
+  # Admin Frontend (separate dashboard for admins)
   admin-frontend:
     build:
       context: .
       dockerfile: Dockerfile.admin-frontend
-    container_name: replypilot-admin-frontend
     environment:
       VITE_ADMIN_API_BASE_URL: ${VITE_ADMIN_API_BASE_URL:-https://admin-api.replypilot.dk}
     networks:
@@ -264,10 +237,9 @@ volumes:
   postgres_data:
   redis_data:
   frontend_dist:
-  traefik-letsencrypt:
 
 networks:
   replypilot-network:
     driver: bridge
   traefik-proxy:
-    driver: bridge
+    external: true
