@@ -63,9 +63,7 @@ services:
 
   # Backend API
   api:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
+    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-api:latest
     container_name: replypilot-api
     environment:
       NODE_ENV: ${NODE_ENV:-production}
@@ -122,9 +120,7 @@ services:
 
   # Admin Backend API
   admin-api:
-    build:
-      context: ./server
-      dockerfile: Dockerfile.admin
+    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-admin-api:latest
     container_name: replypilot-admin-api
     environment:
       NODE_ENV: ${NODE_ENV:-production}
@@ -160,9 +156,7 @@ services:
 
   # Background Workers
   worker-sms:
-    build:
-      context: ./server
-      dockerfile: Dockerfile.worker
+    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-worker:latest
     container_name: replypilot-worker-sms
     command: npm run worker:sms
     environment:
@@ -184,9 +178,7 @@ services:
     restart: unless-stopped
 
   worker-ai:
-    build:
-      context: ./server
-      dockerfile: Dockerfile.worker
+    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-worker:latest
     container_name: replypilot-worker-ai
     command: npm run worker:ai
     environment:
@@ -208,9 +200,7 @@ services:
     restart: unless-stopped
 
   worker-notifications:
-    build:
-      context: ./server
-      dockerfile: Dockerfile.worker
+    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-worker:latest
     container_name: replypilot-worker-notifications
     command: npm run worker:notifications
     environment:
@@ -230,9 +220,7 @@ services:
 
   # Frontend Build
   frontend-build:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
+    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-frontend:latest
     container_name: replypilot-frontend-build
     volumes:
       - frontend_dist:/app/dist
@@ -244,9 +232,7 @@ services:
 
   # Admin Frontend
   admin-frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.admin-frontend
+    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-admin-frontend:latest
     container_name: replypilot-admin-frontend
     environment:
       VITE_ADMIN_API_BASE_URL: ${VITE_ADMIN_API_BASE_URL:-https://admin-api.replypilot.dk}
