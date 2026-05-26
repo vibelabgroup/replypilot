@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Traefik Reverse Proxy (create if not exists)
+  # Traefik Reverse Proxy
   traefik:
     image: traefik:v3.0
     container_name: traefik
@@ -63,7 +63,9 @@ services:
 
   # Backend API
   api:
-    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-api:latest
+    build:
+      context: ./server
+      dockerfile: Dockerfile
     container_name: replypilot-api
     environment:
       NODE_ENV: ${NODE_ENV:-production}
@@ -120,7 +122,9 @@ services:
 
   # Admin Backend API
   admin-api:
-    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-admin-api:latest
+    build:
+      context: ./server
+      dockerfile: Dockerfile.admin
     container_name: replypilot-admin-api
     environment:
       NODE_ENV: ${NODE_ENV:-production}
@@ -156,7 +160,9 @@ services:
 
   # Background Workers
   worker-sms:
-    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-worker:latest
+    build:
+      context: ./server
+      dockerfile: Dockerfile.worker
     container_name: replypilot-worker-sms
     command: npm run worker:sms
     environment:
@@ -178,7 +184,9 @@ services:
     restart: unless-stopped
 
   worker-ai:
-    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-worker:latest
+    build:
+      context: ./server
+      dockerfile: Dockerfile.worker
     container_name: replypilot-worker-ai
     command: npm run worker:ai
     environment:
@@ -200,7 +208,9 @@ services:
     restart: unless-stopped
 
   worker-notifications:
-    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-worker:latest
+    build:
+      context: ./server
+      dockerfile: Dockerfile.worker
     container_name: replypilot-worker-notifications
     command: npm run worker:notifications
     environment:
@@ -220,7 +230,9 @@ services:
 
   # Frontend Build
   frontend-build:
-    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-frontend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
     container_name: replypilot-frontend-build
     volumes:
       - frontend_dist:/app/dist
@@ -232,7 +244,9 @@ services:
 
   # Admin Frontend
   admin-frontend:
-    image: ${DOCKER_USERNAME:-vibelabgroup}/replypilot-admin-frontend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.admin-frontend
     container_name: replypilot-admin-frontend
     environment:
       VITE_ADMIN_API_BASE_URL: ${VITE_ADMIN_API_BASE_URL:-https://admin-api.replypilot.dk}
