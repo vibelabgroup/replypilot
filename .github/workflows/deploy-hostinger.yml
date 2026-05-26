@@ -21,7 +21,7 @@ jobs:
           script: |
             cd /root/estatify || mkdir -p /root/estatify
             cd /root/estatify
-            git pull origin main || git clone https://${{ secrets.GH_TOKEN }}@github.com/vibelabgroup/Estatify.git .
+            git pull origin main || git clone https://${{ secrets.GH_TOKEN }}@github.com/vibelabgroup/replypilot.git .
             docker compose down
             docker compose up -d --build
             docker system prune -f
