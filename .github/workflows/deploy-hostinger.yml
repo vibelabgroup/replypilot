@@ -19,13 +19,11 @@ jobs:
           username: root
           key: ${{ secrets.HOSTINGER_SSH_KEY }}
           script: |
-            rm -rf /root/estatify
-            mkdir -p /root/estatify
-            git clone https://${{ secrets.GH_TOKEN }}@github.com/vibelabgroup/replypilot.git /root/estatify
+            cd /root/estatify || mkdir -p /root/estatify
             cd /root/estatify
-            ls -la
-            pwd
+            git pull origin main || git clone https://${{ secrets.GH_TOKEN }}@github.com/vibelabgroup/replypilot.git .
             docker network create traefik-proxy 2>/dev/null || true
+            docker network connect traefik-proxy traefik 2>/dev/null || true
             docker compose down
             docker compose up -d --build
             docker system prune -f
